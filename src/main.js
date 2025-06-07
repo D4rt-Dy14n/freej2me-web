@@ -16,7 +16,7 @@ import midiBridgeNatives from "../libjs/libmidibridge.js";
 const evtQueue = new EventQueue();
 const sp = new URLSearchParams(location.search);
 
-const cheerpjWebRoot = '/app'+location.pathname.replace(/\/[^/]*$/,'');
+const cheerpjWebRoot = '.';
 
 let isMobile = sp.get('mobile');
 
@@ -379,7 +379,7 @@ async function init() {
     if (sp.get('app')) {
         args = ['app', sp.get('app')];
     } else {
-        args = ['jar', cheerpjWebRoot+"/jar/" + (sp.get('jar') || "game.jar")];
+        args = ['jar', cheerpjWebRoot+"/games/" + (sp.get('jar') || "game.jar")];
     }
 
     console.log("Main: Запускаем FreeJ2ME с аргументами:", args);
