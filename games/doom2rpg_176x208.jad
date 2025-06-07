@@ -1,0 +1,20 @@
+Manifest-Version: 1.0
+MIDlet-Data-Size: 30000
+MicroEdition-Configuration: CLDC-1.0
+MIDlet-Name: Doom II RPG
+Created-By: Metaflow
+MIDlet-Icon: /icon.png
+MIDlet-Vendor: mob.ua
+MIDlet-1: Doom II RPG, /icon.png, App
+MIDlet-Version: 5.9.20
+MicroEdition-Profile: MIDP-2.0
+MIDlet-Delete-Confirm: SEclub.ORG
+Content-Folder: Games
+JAMDAT-BUILD: 5.9.20.pcptr.nkn95
+Nokia-MIDlet-Category: Game
+SiteURL: wap.mob.ua
+
+MIDlet-Jar-Size: 809121
+MIDlet-Jar-URL: doom2rpg_176x208.jar
+Canvas-Width: 176
+Canvas-Height: 208

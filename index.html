@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎮 FreeJ2ME Web - J2ME Games</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .game-card {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border: 1px solid #dee2e6;
+        }
+        .game-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        .game-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        .play-btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.3s ease;
+        }
+        .play-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        .info {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 15px;
+            background: rgba(102, 126, 234, 0.1);
+            border-radius: 8px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 FreeJ2ME Web - J2ME Games</h1>
+        
+        <div class="info">
+            <p><strong>Готово для GitHub Pages!</strong> Каждая игра запускается в отдельном эмуляторе в вашем браузере.</p>
+            <p>Поддержка: клавиатура, сенсорный ввод, виртуальная клавиатура</p>
+        </div>
+
+        <div class="games-grid">
+            <div class="game-card">
+                <div class="game-title">Doom II RPG</div>
+                <a href="run.html?jar=doom2rpg.jar" class="play-btn">Играть</a>
+            </div>
+            
+            <div class="game-card">
+                <div class="game-title">Doom II RPG (176x208)</div>
+                <a href="run.html?jar=doom2rpg_176x208.jar" class="play-btn">Играть</a>
+            </div>
+            
+            <div class="game-card">
+                <div class="game-title">Retro Snake</div>
+                <a href="run.html?jar=retrosnake.jar" class="play-btn">Играть</a>
+            </div>
+            
+            <div class="game-card">
+                <div class="game-title">Retro Snake (240x320)</div>
+                <a href="run.html?jar=retrosnake_240x320.jar" class="play-btn">Играть</a>
+            </div>
+            
+            <div class="game-card">
+                <div class="game-title">Nokia Snake</div>
+                <a href="run.html?jar=nokia_snake.jar" class="play-btn">Играть</a>
+            </div>
+            
+            <div class="game-card">
+                <div class="game-title">Snake</div>
+                <a href="run.html?jar=snake.jar" class="play-btn">Играть</a>
+            </div>
+            
+            <div class="game-card">
+                <div class="game-title">📂 Менеджер игр</div>
+                <a href="index.html" class="play-btn">Открыть</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html> 
