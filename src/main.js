@@ -580,14 +580,21 @@ async function init() {
             if (!initSuccess) {
                 console.log("Main: Не удалось инициализировать ни с одним из путей");
                 
-                // Попробуем скопировать файл в нужную директорию
+                // Попробуем загрузить файл через fetch и записать в CheerpJ FS
                 try {
-                    console.log("Main: Пытаемся скопировать файл в /files/...");
+                    console.log("Main: Загружаем JAR файл через fetch...");
+                    const response = await fetch("./games/" + jarName);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const jarData = await response.arrayBuffer();
+                    console.log(`Main: Загружено ${jarData.byteLength} байт`);
+                    
+                    // Записываем в CheerpJ виртуальную файловую систему
                     const Files = await lib.java.nio.file.Files;
                     const Paths = await lib.java.nio.file.Paths;
-                    const StandardCopyOption = await lib.java.nio.file.StandardCopyOption;
                     
-                    const sourcePath = await Paths.get("./games/" + jarName);
                     const targetDir = await Paths.get("/files/" + appId);
                     const targetPath = await Paths.get("/files/" + appId + "/app.jar");
                     
@@ -595,12 +602,24 @@ async function init() {
                     await Files.createDirectories(targetDir);
                     console.log(`Main: Создана директория /files/${appId}`);
                     
-                    // Копируем файл
-                    await Files.copy(sourcePath, targetPath, await StandardCopyOption.REPLACE_EXISTING);
-                    console.log(`Main: Файл скопирован в /files/${appId}/app.jar`);
+                    // Конвертируем ArrayBuffer в Java byte array
+                    const jarBytes = new Int8Array(jarData);
+                    const javaByteArray = await lib.java.lang.reflect.Array.newInstance(await lib.java.lang.Byte.TYPE, jarBytes.length);
+                    
+                    for (let i = 0; i < jarBytes.length; i++) {
+                        await lib.java.lang.reflect.Array.setByte(javaByteArray, i, jarBytes[i]);
+                    }
+                    
+                    // Записываем файл
+                    await Files.write(targetPath, javaByteArray);
+                    console.log(`Main: Файл записан в /files/${appId}/app.jar`);
+                    
+                    // Проверяем что файл создался
+                    const exists = await Files.exists(targetPath);
+                    console.log(`Main: Файл существует: ${exists}`);
                     
                 } catch (copyError) {
-                    console.log("Main: Ошибка копирования файла:", copyError.message);
+                    console.log("Main: Ошибка загрузки/записи файла:", copyError.message || copyError);
                 }
             }
             
@@ -629,8 +648,49 @@ async function init() {
             
         } catch (error) {
             console.error("Main: Ошибка LauncherUtil, fallback to jar:", error);
-            // Fallback to jar режим
-            args = ['jar', "./games/" + jarName];
+            
+            // Попробуем загрузить JAR файл для прямого запуска
+            try {
+                console.log("Main: Загружаем JAR для прямого запуска...");
+                const response = await fetch("./games/" + jarName);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const jarData = await response.arrayBuffer();
+                console.log(`Main: Загружено ${jarData.byteLength} байт для прямого запуска`);
+                
+                // Записываем во временную директорию
+                const Files = await lib.java.nio.file.Files;
+                const Paths = await lib.java.nio.file.Paths;
+                
+                const tempDir = await Paths.get("/tmp");
+                const tempPath = await Paths.get("/tmp/" + jarName);
+                
+                // Создаем директорию
+                await Files.createDirectories(tempDir);
+                console.log(`Main: Создана временная директория /tmp`);
+                
+                // Конвертируем ArrayBuffer в Java byte array
+                const jarBytes = new Int8Array(jarData);
+                const javaByteArray = await lib.java.lang.reflect.Array.newInstance(await lib.java.lang.Byte.TYPE, jarBytes.length);
+                
+                for (let i = 0; i < jarBytes.length; i++) {
+                    await lib.java.lang.reflect.Array.setByte(javaByteArray, i, jarBytes[i]);
+                }
+                
+                // Записываем файл
+                await Files.write(tempPath, javaByteArray);
+                console.log(`Main: Файл записан в /tmp/${jarName}`);
+                
+                // Fallback to jar режим с временным файлом
+                args = ['jar', "/tmp/" + jarName];
+                
+            } catch (fetchError) {
+                console.error("Main: Ошибка загрузки JAR для fallback:", fetchError);
+                // Последняя попытка с исходным путем
+                args = ['jar', "./games/" + jarName];
+            }
         }
     }
 
