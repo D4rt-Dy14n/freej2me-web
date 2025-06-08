@@ -615,22 +615,34 @@ async function init() {
                     }
                     console.log(`Main: Загружено ${jarData.byteLength} байт`);
                     
-                    // Используем cheerpJDataFS API для записи файла
+                    // Используем Java File API для записи файла
                     const targetPath = "/files/" + appId + "/app.jar";
                     const targetDir = "/files/" + appId;
                     
-                    // Создаем директорию через cheerpJDataFS
-                    await cheerpJDataFS.mkdir(targetDir, { recursive: true });
+                    const Files = await lib.java.nio.file.Files;
+                    const Paths = await lib.java.nio.file.Paths;
+                    
+                    // Создаем директорию
+                    const targetDirPath = await Paths.get(targetDir);
+                    await Files.createDirectories(targetDirPath);
                     console.log(`Main: Создана директория ${targetDir}`);
                     
-                    // Записываем файл через cheerpJDataFS
-                    await cheerpJDataFS.writeFile(targetPath, new Uint8Array(jarData));
+                    // Записываем файл
+                    const targetFilePath = await Paths.get(targetPath);
+                    // Простое создание Java byte array
+                    const uint8Array = new Uint8Array(jarData);
+                    await Files.write(targetFilePath, uint8Array);
                     console.log(`Main: Файл записан в ${targetPath}`);
                     
                     // Проверяем что файл существует
                     try {
-                        const stat = await cheerpJDataFS.stat(targetPath);
-                        console.log(`Main: Файл существует, размер: ${stat.size} байт`);
+                        const exists = await Files.exists(targetFilePath);
+                        if (exists) {
+                            const size = await Files.size(targetFilePath);
+                            console.log(`Main: Файл существует, размер: ${size} байт`);
+                        } else {
+                            console.log(`Main: Файл не существует после записи`);
+                        }
                     } catch (statError) {
                         console.log(`Main: Ошибка проверки файла: ${statError.message}`);
                     }
@@ -699,21 +711,33 @@ async function init() {
                 }
                 console.log(`Main: Загружено ${jarData.byteLength} байт для прямого запуска`);
                 
-                // Записываем во временную директорию через cheerpJDataFS
+                // Записываем во временную директорию через Java File API
                 const tempPath = "/tmp/" + jarName;
                 
+                const Files = await lib.java.nio.file.Files;
+                const Paths = await lib.java.nio.file.Paths;
+                
                 // Создаем директорию
-                await cheerpJDataFS.mkdir("/tmp", { recursive: true });
+                const tempDirPath = await Paths.get("/tmp");
+                await Files.createDirectories(tempDirPath);
                 console.log(`Main: Создана временная директория /tmp`);
                 
                 // Записываем файл
-                await cheerpJDataFS.writeFile(tempPath, new Uint8Array(jarData));
+                const tempFilePath = await Paths.get(tempPath);
+                // Простое создание Java byte array
+                const uint8Array = new Uint8Array(jarData);
+                await Files.write(tempFilePath, uint8Array);
                 console.log(`Main: Файл записан в ${tempPath}`);
                 
                 // Проверяем
                 try {
-                    const stat = await cheerpJDataFS.stat(tempPath);
-                    console.log(`Main: Временный файл существует, размер: ${stat.size} байт`);
+                    const exists = await Files.exists(tempFilePath);
+                    if (exists) {
+                        const size = await Files.size(tempFilePath);
+                        console.log(`Main: Временный файл существует, размер: ${size} байт`);
+                    } else {
+                        console.log(`Main: Временный файл не существует после записи`);
+                    }
                 } catch (statError) {
                     console.log(`Main: Ошибка проверки временного файла: ${statError.message}`);
                 }
