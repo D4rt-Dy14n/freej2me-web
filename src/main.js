@@ -619,6 +619,11 @@ async function init() {
                     const targetPath = "/files/" + appId + "/app.jar";
                     const targetDir = "/files/" + appId;
                     
+                    // Проверяем что lib доступен
+                    if (!lib || !lib.java) {
+                        throw new Error("Java library не доступна");
+                    }
+                    
                     const Files = await lib.java.nio.file.Files;
                     const Paths = await lib.java.nio.file.Paths;
                     
@@ -713,6 +718,11 @@ async function init() {
                 
                 // Записываем во временную директорию через Java File API
                 const tempPath = "/tmp/" + jarName;
+                
+                // Проверяем что lib доступен
+                if (!lib || !lib.java) {
+                    throw new Error("Java library не доступна (fallback)");
+                }
                 
                 const Files = await lib.java.nio.file.Files;
                 const Paths = await lib.java.nio.file.Paths;
