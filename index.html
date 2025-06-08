@@ -260,6 +260,11 @@
             background: #dc3545;
         }
 
+        .notification.warning {
+            background: #ffc107;
+            color: #212529;
+        }
+
 
 
         @media (max-width: 768px) {
@@ -363,39 +368,15 @@
             });
         }
 
-        // Загрузка игры на сервер
+        // Загрузка игры на сервер (для GitHub Pages - только показ файла)
         async function uploadGame(file) {
-            const loading = document.getElementById('uploadLoading');
-            loading.style.display = 'block';
-            
-            try {
-                const formData = new FormData();
-                formData.append('jar', file);
-                
-                const response = await fetch('/api/jar/', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                if (response.ok) {
-                    showNotification('Игра успешно загружена!', 'success');
-                    loadGamesList(); // Перезагрузка списка игр
-                    document.getElementById('fileInput').value = ''; // Очистка input
-                } else {
-                    throw new Error('Ошибка загрузки файла');
-                }
-            } catch (error) {
-                console.error('Ошибка:', error);
-                showNotification('Ошибка загрузки игры', 'error');
-            } finally {
-                loading.style.display = 'none';
-            }
+            showNotification('На GitHub Pages нельзя загружать файлы. Используйте предустановленные игры.', 'warning');
         }
 
         // Загрузка списка игр
         async function loadGamesList() {
             try {
-                const response = await fetch('/api/jar/');
+                const response = await fetch('./games/games.json');
                 const games = await response.json();
                 displayGamesList(games);
             } catch (error) {
@@ -444,7 +425,7 @@
         async function runGame(filename) {
             try {
                 // Перенаправляем на run.html с параметром jar
-                const runUrl = `/freej2me-web/run?jar=${encodeURIComponent(filename)}`;
+                const runUrl = `./run.html?jar=${encodeURIComponent(filename)}`;
                 window.location.href = runUrl;
             } catch (error) {
                 console.error('Ошибка запуска игры:', error);
@@ -461,15 +442,14 @@
         async function clearGameData(filename) {
             if (confirm('Очистить все данные игры? Это действие нельзя отменить.')) {
                 try {
-                                         const response = await fetch(`/api/jar/${filename}/clear`, {
-                         method: 'POST'
-                     });
-                    
-                    if (response.ok) {
-                        showNotification('Данные игры очищены', 'success');
-                    } else {
-                        throw new Error('Ошибка очистки данных');
-                    }
+                    // Очищаем localStorage для игры
+                    const keys = Object.keys(localStorage);
+                    keys.forEach(key => {
+                        if (key.includes(filename.replace('.jar', ''))) {
+                            localStorage.removeItem(key);
+                        }
+                    });
+                    showNotification('Данные игры очищены из localStorage', 'success');
                 } catch (error) {
                     console.error('Ошибка:', error);
                     showNotification('Ошибка очистки данных', 'error');
@@ -479,23 +459,7 @@
 
         // Удаление игры
         async function deleteGame(filename) {
-            if (confirm('Удалить игру? Это действие нельзя отменить.')) {
-                try {
-                                         const response = await fetch(`/api/jar/${filename}`, {
-                         method: 'DELETE'
-                     });
-                    
-                    if (response.ok) {
-                        showNotification('Игра удалена', 'success');
-                        loadGamesList(); // Перезагрузка списка
-                    } else {
-                        throw new Error('Ошибка удаления игры');
-                    }
-                } catch (error) {
-                    console.error('Ошибка:', error);
-                    showNotification('Ошибка удаления игры', 'error');
-                }
-            }
+            showNotification('На GitHub Pages нельзя удалять файлы. Функция отключена.', 'warning');
         }
 
         // Показ уведомлений

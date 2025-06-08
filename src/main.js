@@ -558,6 +558,7 @@ async function init() {
             // Пытаемся инициализировать приложение с разными путями
             let initSuccess = false;
             const possiblePaths = [
+                "./games/" + jarName,
                 "/app/jar/" + jarName,
                 "/files/" + jarName,
                 "/jar/" + jarName,
@@ -586,7 +587,7 @@ async function init() {
                     const Paths = await lib.java.nio.file.Paths;
                     const StandardCopyOption = await lib.java.nio.file.StandardCopyOption;
                     
-                    const sourcePath = await Paths.get("/app/jar/" + jarName);
+                    const sourcePath = await Paths.get("./games/" + jarName);
                     const targetDir = await Paths.get("/files/" + appId);
                     const targetPath = await Paths.get("/files/" + appId + "/app.jar");
                     
@@ -629,7 +630,7 @@ async function init() {
         } catch (error) {
             console.error("Main: Ошибка LauncherUtil, fallback to jar:", error);
             // Fallback to jar режим
-            args = ['jar', "/app/jar/" + jarName];
+            args = ['jar', "./games/" + jarName];
         }
     }
 
