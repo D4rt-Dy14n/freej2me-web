@@ -615,42 +615,14 @@ async function init() {
                     }
                     console.log(`Main: Загружено ${jarData.byteLength} байт`);
                     
-                    // Используем Java File API для записи файла
+                    // Используем простой подход - пропускаем запись файла и используем прямо данные
                     const targetPath = "/files/" + appId + "/app.jar";
                     const targetDir = "/files/" + appId;
                     
-                    // Проверяем что lib доступен
-                    if (!lib || !lib.java) {
-                        throw new Error("Java library не доступна");
-                    }
+                    console.log(`Main: Попытка записи файла в ${targetPath} пропущена - будем использовать fallback`);
                     
-                    const Files = await lib.java.nio.file.Files;
-                    const Paths = await lib.java.nio.file.Paths;
-                    
-                    // Создаем директорию
-                    const targetDirPath = await Paths.get(targetDir);
-                    await Files.createDirectories(targetDirPath);
-                    console.log(`Main: Создана директория ${targetDir}`);
-                    
-                    // Записываем файл
-                    const targetFilePath = await Paths.get(targetPath);
-                    // Простое создание Java byte array
-                    const uint8Array = new Uint8Array(jarData);
-                    await Files.write(targetFilePath, uint8Array);
-                    console.log(`Main: Файл записан в ${targetPath}`);
-                    
-                    // Проверяем что файл существует
-                    try {
-                        const exists = await Files.exists(targetFilePath);
-                        if (exists) {
-                            const size = await Files.size(targetFilePath);
-                            console.log(`Main: Файл существует, размер: ${size} байт`);
-                        } else {
-                            console.log(`Main: Файл не существует после записи`);
-                        }
-                    } catch (statError) {
-                        console.log(`Main: Ошибка проверки файла: ${statError.message}`);
-                    }
+                    // Принудительно вызываем ошибку чтобы перейти к fallback режиму
+                    throw new Error("Принудительный переход к fallback jar режиму");
                     
                 } catch (copyError) {
                     console.log("Main: Ошибка загрузки/записи файла:", copyError.message || copyError);
@@ -716,44 +688,15 @@ async function init() {
                 }
                 console.log(`Main: Загружено ${jarData.byteLength} байт для прямого запуска`);
                 
-                // Записываем во временную директорию через Java File API
-                const tempPath = "/tmp/" + jarName;
+                // Создаем временный blob URL для передачи данных в CheerpJ
+                console.log(`Main: Создаем blob URL для JAR данных...`);
                 
-                // Проверяем что lib доступен
-                if (!lib || !lib.java) {
-                    throw new Error("Java library не доступна (fallback)");
-                }
+                const blob = new Blob([jarData], { type: 'application/java-archive' });
+                const blobUrl = URL.createObjectURL(blob);
+                console.log(`Main: Создан blob URL: ${blobUrl}`);
                 
-                const Files = await lib.java.nio.file.Files;
-                const Paths = await lib.java.nio.file.Paths;
-                
-                // Создаем директорию
-                const tempDirPath = await Paths.get("/tmp");
-                await Files.createDirectories(tempDirPath);
-                console.log(`Main: Создана временная директория /tmp`);
-                
-                // Записываем файл
-                const tempFilePath = await Paths.get(tempPath);
-                // Простое создание Java byte array
-                const uint8Array = new Uint8Array(jarData);
-                await Files.write(tempFilePath, uint8Array);
-                console.log(`Main: Файл записан в ${tempPath}`);
-                
-                // Проверяем
-                try {
-                    const exists = await Files.exists(tempFilePath);
-                    if (exists) {
-                        const size = await Files.size(tempFilePath);
-                        console.log(`Main: Временный файл существует, размер: ${size} байт`);
-                    } else {
-                        console.log(`Main: Временный файл не существует после записи`);
-                    }
-                } catch (statError) {
-                    console.log(`Main: Ошибка проверки временного файла: ${statError.message}`);
-                }
-                
-                // Fallback to jar режим с временным файлом
-                args = ['jar', tempPath];
+                // Используем blob URL напрямую
+                args = ['jar', blobUrl];
                 
             } catch (fetchError) {
                 console.error("Main: Ошибка загрузки JAR для fallback:", fetchError);
