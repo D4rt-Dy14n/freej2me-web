@@ -1,6 +1,5 @@
 import { LibMedia } from "../libmedia/libmedia.js";
 import { LibMidi, createUnlockingAudioContext } from "../libmidi/libmidi.js";
-import { codeMap, KeyRepeatManager } from "./key.js";
 import { EventQueue } from "./eventqueue.js";
 import { initKbdListeners, setKbdHandler, kbdWidth, kbdHeight } from "./screenKbd.js";
 
@@ -16,7 +15,7 @@ import midiBridgeNatives from "../libjs/libmidibridge.js";
 const evtQueue = new EventQueue();
 const sp = new URLSearchParams(location.search);
 
-const cheerpjWebRoot = '.';
+const cheerpjWebRoot = '/app'+location.pathname.replace(/\/[^/]*$/,'');
 
 let isMobile = sp.get('mobile');
 
@@ -25,10 +24,56 @@ let screenCtx = null;
 
 let fractionScale = localStorage && localStorage.getItem("pl.zb3.freej2me.fractionScale") === "true";
 let scaleSet = false;
+let midiEOMHandler; // Глобальная переменная для хранения слушателя
 
-const keyRepeatManager = new KeyRepeatManager();
+// Простое мапирование клавиш в стиле Dendy - без сложных менеджеров
+const KEY_MAP = {
+    // Цифры как есть
+    'Digit0': 48, 'Digit1': 49, 'Digit2': 50, 'Digit3': 51, 'Digit4': 52,
+    'Digit5': 53, 'Digit6': 54, 'Digit7': 55, 'Digit8': 56, 'Digit9': 57,
+    // Стрелки -> цифры (J2ME навигация)
+    'ArrowUp': 50,    // -> 2
+    'ArrowDown': 56,  // -> 8  
+    'ArrowLeft': 52,  // -> 4
+    'ArrowRight': 54, // -> 6
+    // WASD -> цифры (альтернативная навигация)
+    'KeyW': 50,       // W -> 2 (вверх)
+    'KeyS': 56,       // S -> 8 (вниз)  
+    'KeyA': 52,       // A -> 4 (лево)
+    'KeyD': 54,       // D -> 6 (право)
+    // Прочие важные клавиши
+    'Enter': 53,      // -> 5 (средняя кнопка)
+    'KeyQ': 112,      // Левая софт-клавиша (F1)
+    'KeyE': 113,      // Правая софт-клавиша (F2)
+    'Escape': 27,     // Esc клавиша (стандартный ASCII код)
+    // Звездочка * - разные способы ввода
+    'NumpadMultiply': 42, // * с цифровой клавиатуры
+    'NumpadAsterisk': 42, // * виртуальная кнопка
+    'Equal': 42,          // = клавиша (Shift+= дает *)
+    'KeyI': 42,           // * альтернативная клавиша
+    // Решетка # - основной код 35
+    'NumpadDivide': 35,   // / с цифровой клавиатуры  
+    'Backquote': 35,      // ` клавиша (тильда)
+    'Backslash': 35,      // \ клавиша  
+    'KeyH': 35,           // H клавиша для #
+    // Альтернативные коды для # (если 35 не работает)
+    'Slash': 127,         // / основная клавиша -> альтернативный код 127
+    'KeyN': 127           // N клавиша -> альтернативный код 127
+};
 
 window.evtQueue = evtQueue;
+
+// Глобальная функция для виртуальных кнопок
+window.handleVirtualKey = function(isDown, keyCode) {
+    const mappedCode = KEY_MAP[keyCode];
+    
+    if (mappedCode) {
+        evtQueue.queueEvent({
+            kind: isDown ? 'keydown' : 'keyup',
+            args: [mappedCode, mappedCode, false, false]
+        });
+    }
+};
 
 function autoscale() {
     if (!scaleSet) return;
@@ -67,42 +112,37 @@ function setListeners() {
     let mouseDown = false;
     let noMouse = false;
 
-    setKbdHandler((isDown, key) => {
-        const symbol = key.startsWith('Digit') ? key.substring(5) : '\x00';
-        keyRepeatManager.post(isDown, key, {symbol, ctrlKey: false, shiftKey: false});
-    });
+    // Виртуальная клавиатура использует window.handleVirtualKey напрямую
 
-    function handleKeyEvent(e) {
-        const isDown = e.type === 'keydown';
-
-        if (codeMap[e.code]) {
-            keyRepeatManager.post(isDown, e.code, {
-                symbol: e.key.length == 1 ? e.key.charCodeAt(0) : '\x00',
-                ctrlKey: e.ctrlKey,
-                shiftKey: e.shiftKey
-            })
+    // Простая функция обработки клавиш - в стиле Dendy
+    function handleKeyboard(e) {
+        let keyCode = KEY_MAP[e.code];
+        
+        // Обработка символов со Shift
+        if (e.shiftKey) {
+            if (e.code === 'Digit8') {
+                keyCode = 42; // Shift+8 = *
+            } else if (e.code === 'Digit3') {
+                keyCode = 35; // Shift+3 = #
+            }
         }
+        
+        if (!keyCode) return; // игнорируем неизвестные клавиши
+        
+        const isDown = e.type === 'keydown';
+        
+        // Мгновенно отправляем в очередь событий  
+        evtQueue.queueEvent({
+            kind: isDown ? 'keydown' : 'keyup',
+            args: [keyCode, keyCode, e.ctrlKey, e.shiftKey]
+        });
+        
         e.preventDefault();
     }
 
-    display.addEventListener('keydown', handleKeyEvent);
-    display.addEventListener('keyup', handleKeyEvent);
-
-    keyRepeatManager.register((kind, key, args) => {
-        if (kind === 'click') {
-            if (key === 'Maximize') {
-                fractionScale = !fractionScale;
-                localStorage && localStorage.setItem("pl.zb3.freej2me.fractionScale", fractionScale);
-                autoscale();
-            }
-        } else if (codeMap[key]) {
-            console.log('queuin event');
-            evtQueue.queueEvent({
-                kind: kind === 'up' ? 'keyup' : 'keydown',
-                args: [codeMap[key], args.symbol, args.ctrlKey, args.shiftKey]
-            });
-        }
-    });
+    // Единственный обработчик событий
+    document.addEventListener('keydown', handleKeyboard);
+    document.addEventListener('keyup', handleKeyboard);
 
     display.addEventListener('mousedown', async e => {
         display.focus();
@@ -186,21 +226,18 @@ function setListeners() {
     });
 
     document.addEventListener('mousedown', e => {
-        console.log('refocus');
         setTimeout(() => display.focus(), 20);
-        ;
     });
 
     display.addEventListener('blur', e => {
-        console.log('refocus');
         // it doesn't work without any timeout
         setTimeout(() => display.focus(), 10);
-        ;
     });
 
     window.addEventListener('resize', autoscale);
 
     initKbdListeners();
+    setKbdHandler(window.handleVirtualKey);
 }
 
 function setFaviconFromBuffer(arrayBuffer) {
@@ -221,9 +258,65 @@ function setFaviconFromBuffer(arrayBuffer) {
     reader.readAsDataURL(blob);
 }
 
+function cleanup() {
+    console.log('Main: Очищаем ресурсы...');
+    
+    // Очищаем MIDI слушатели
+    if (window.libmidi && window.libmidi.midiPlayer && midiEOMHandler) {
+        window.libmidi.midiPlayer.removeEventListener('end-of-media', midiEOMHandler);
+    }
+    
+    // Очищаем кеш MIDI плеера
+    if (window.libMidiBridge && window.libMidiBridge.clearMidiPlayerCache) {
+        window.libMidiBridge.clearMidiPlayerCache();
+    }
+    
+    // Закрываем LibMidi
+    if (window.libmidi) {
+        window.libmidi.close();
+    }
+    
+    // Закрываем LibMedia
+    if (window.libmedia) {
+        window.libmedia.close();
+    }
+}
+
+// Добавляем слушатели для очистки при закрытии страницы
+window.addEventListener('beforeunload', cleanup);
+window.addEventListener('unload', cleanup);
+
 async function init() {
+    // Фильтруем debug логи FreeJ2ME 
+    const originalConsoleLog = console.log;
+    console.log = function(...args) {
+        const message = args.join(' ');
+        // Пропускаем debug логи MIDI системы
+        if (message.includes('playerEOM called') || 
+            message.includes('onplayerstop found') ||
+            message.includes('MIDI sequence set, duration:')) {
+            return;
+        }
+        originalConsoleLog.apply(console, args);
+    };
+
     try {
         console.log("Main: Начинаем инициализацию...");
+        document.getElementById("loading").textContent = "Initializing audio...";
+
+        // Создаем аудио контекст
+        console.log("Main: Создаем аудио контекст...");
+        const audioContext = createUnlockingAudioContext();
+        
+        // Инициализируем LibMidi
+        console.log("Main: Инициализируем LibMidi...");
+        window.libmidi = new LibMidi(audioContext);
+        await window.libmidi.init();
+        
+        // Инициализируем LibMedia
+        console.log("Main: Инициализируем LibMedia...");
+        window.libmedia = new LibMedia(audioContext);
+
         document.getElementById("loading").textContent = "Loading CheerpJ...";
 
         console.log("Main: Получаем display элементы...");
@@ -231,16 +324,24 @@ async function init() {
         screenCtx = display.getContext('2d');
 
         console.log("Main: Устанавливаем слушатели событий...");
+        console.log('🚀 About to call setListeners()');
         setListeners();
+        console.log('🚀 setListeners() call completed');
 
-    window.libmidi = new LibMidi(createUnlockingAudioContext());
-    await window.libmidi.init();
-    window.libmidi.midiPlayer.addEventListener('end-of-media', e => {
-        window.evtQueue.queueEvent({kind: 'player-eom', player: e.target});
-    })
-    window.libmedia = new LibMedia();
+        // Добавляем обработчик событий для MIDI (только один раз)
+        if (!midiEOMHandler) {
+            midiEOMHandler = (e) => {
+                window.evtQueue.queueEvent({kind: 'player-eom', player: e.target});
+            };
+        }
+        
+        // Удаляем старый слушатель если он есть и добавляем новый
+        if (window.libmidi.midiPlayer) {
+            window.libmidi.midiPlayer.removeEventListener('end-of-media', midiEOMHandler);
+            window.libmidi.midiPlayer.addEventListener('end-of-media', midiEOMHandler);
+        }
 
-    await cheerpjInit({
+        await cheerpjInit({
         enableDebug: false,
         natives: {
             ...canvasFontNatives,
@@ -276,27 +377,62 @@ async function init() {
                 const PointerEvent = await lib.pl.zb3.freej2me.bridge.shell.PointerEvent;
 
                 const evt = await evtQueue.waitForEvent();
-                if (evt.kind == 'keydown') {
-                    await listener.keyPressed(await new KeyEvent(...evt.args));
-                } else if (evt.kind == 'keyup') {
-                    await listener.keyReleased(await new KeyEvent(...evt.args));
-                } else if (evt.kind == 'pointerpressed') {
-                    await listener.pointerPressed(await new PointerEvent(evt.x, evt.y));
-                } else if (evt.kind == 'pointerdragged') {
-                    await listener.pointerDragged(await new PointerEvent(evt.x, evt.y));
-                } else if (evt.kind == 'pointerreleased') {
-                    await listener.pointerReleased(await new PointerEvent(evt.x, evt.y));
-                } else if (evt.kind == 'player-eom') {
-                    await listener.playerEOM(evt.player);
-                } else if (evt.kind == 'player-video-frame') {
-                    await listener.playerVideoFrame(evt.player);
+                
+                try {
+                    // Добавляем таймауты для всех Java вызовов
+                    const processEventWithTimeout = async (eventProcessor, timeoutMs = 100) => {
+                        return Promise.race([
+                            eventProcessor(),
+                            new Promise((_, reject) => 
+                                setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+                            )
+                        ]);
+                    };
+
+                    if (evt.kind == 'keydown') {
+                        await processEventWithTimeout(async () => {
+                            await listener.keyPressed(await new KeyEvent(...evt.args));
+                        });
+                    } else if (evt.kind == 'keyup') {
+                        await processEventWithTimeout(async () => {
+                            await listener.keyReleased(await new KeyEvent(...evt.args));
+                        });
+                    } else if (evt.kind == 'pointerpressed') {
+                        await processEventWithTimeout(async () => {
+                            await listener.pointerPressed(await new PointerEvent(evt.x, evt.y));
+                        });
+                    } else if (evt.kind == 'pointerdragged') {
+                        await processEventWithTimeout(async () => {
+                            await listener.pointerDragged(await new PointerEvent(evt.x, evt.y));
+                        });
+                    } else if (evt.kind == 'pointerreleased') {
+                        await processEventWithTimeout(async () => {
+                            await listener.pointerReleased(await new PointerEvent(evt.x, evt.y));
+                        });
+                    } else if (evt.kind == 'player-eom') {
+                        await processEventWithTimeout(async () => {
+                            await listener.playerEOM(evt.player);
+                        });
+                    } else if (evt.kind == 'player-video-frame') {
+                        await processEventWithTimeout(async () => {
+                            await listener.playerVideoFrame(evt.player);
+                        });
+                    }
+                } catch (error) {
+                    console.error('Shell: ошибка при обработке события:', error);
+                    if (error.message === 'Timeout') {
+                        console.error('Shell: TIMEOUT! Событие зависло, пропускаем и продолжаем');
+                    }
+                    // Не блокируем обработку других событий даже при ошибке
                 }
             },
             async Java_pl_zb3_freej2me_bridge_shell_Shell_restart(lib) {
+                cleanup();
                 location.reload();
             },
             async Java_pl_zb3_freej2me_bridge_shell_Shell_exit(lib) {
-                location.href = './';
+                cleanup();
+                location.href = '/';
             },
             async Java_pl_zb3_freej2me_bridge_shell_Shell_sthop(lib) {
                 debugger;
@@ -314,40 +450,13 @@ async function init() {
     document.getElementById("loading").textContent = "Loading...";
 
     const lib = await cheerpjRunLibrary(cheerpjWebRoot+"/freej2me-web.jar");
+    
+    // Устанавливаем emulator для bridge callbacks
+    window.emulator = lib;
 
-    // Полная очистка браузерного хранилища CheerpJ
+    // Очищаем кэш FreeJ2ME для свежего запуска
     try {
-        console.log("Main: Очищаем браузерное хранилище CheerpJ...");
-        
-        // Очищаем IndexedDB CheerpJ
-        if ('indexedDB' in window) {
-            const databases = ['CheerpJFS', 'cheerpjFS', 'cheerpj', 'CheerpJ'];
-            for (const dbName of databases) {
-                try {
-                    const deleteReq = indexedDB.deleteDatabase(dbName);
-                    console.log(`Main: Попытка удаления БД ${dbName}...`);
-                } catch (e) {
-                    console.log(`Main: Не удалось удалить БД ${dbName}:`, e.message);
-                }
-            }
-        }
-        
-        // Очищаем localStorage
-        try {
-            const keysToRemove = [];
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && (key.includes('cheerpj') || key.includes('CheerpJ') || key.includes('freej2me'))) {
-                    keysToRemove.push(key);
-                }
-            }
-            keysToRemove.forEach(key => {
-                localStorage.removeItem(key);
-                console.log(`Main: Удален localStorage ключ: ${key}`);
-            });
-        } catch (e) {
-            console.log("Main: Ошибка при очистке localStorage:", e.message);
-        }
+        console.log("Main: Очищаем кэш браузера...");
         
         // Очищаем sessionStorage
         try {
@@ -365,6 +474,63 @@ async function init() {
         } catch (e) {
             console.log("Main: Ошибка при очистке sessionStorage:", e.message);
         }
+
+        // Очищаем localStorage
+        try {
+            const localKeysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (key.includes('cheerpj') || key.includes('CheerpJ') || key.includes('freej2me'))) {
+                    localKeysToRemove.push(key);
+                }
+            }
+            localKeysToRemove.forEach(key => {
+                localStorage.removeItem(key);
+                console.log(`Main: Удален localStorage ключ: ${key}`);
+            });
+        } catch (e) {
+            console.log("Main: Ошибка при очистке localStorage:", e.message);
+        }
+
+        // Очищаем IndexedDB (CheerpJ виртуальная файловая система)
+        try {
+            const databases = await indexedDB.databases();
+            for (const db of databases) {
+                if (db.name && (db.name.includes('cheerpj') || db.name.includes('CheerpJ') || db.name.includes('/CheerpJ'))) {
+                    console.log(`Main: Удаляем базу данных: ${db.name}`);
+                    const deleteReq = indexedDB.deleteDatabase(db.name);
+                    await new Promise((resolve, reject) => {
+                        deleteReq.onsuccess = () => resolve();
+                        deleteReq.onerror = () => reject(deleteReq.error);
+                        deleteReq.onblocked = () => {
+                            console.log(`Main: База данных ${db.name} заблокирована, принудительно удаляем...`);
+                            setTimeout(resolve, 1000);
+                        };
+                    });
+                }
+            }
+        } catch (e) {
+            console.log("Main: Ошибка при очистке IndexedDB:", e.message);
+        }
+
+        // Дополнительная очистка - удаляем временные папки игр
+        try {
+            console.log("Main: Удаляем временные файлы игр...");
+            const databases = await indexedDB.databases();
+            for (const db of databases) {
+                if (db.name && db.name.includes('files')) {
+                    console.log(`Main: Удаляем файловую базу: ${db.name}`);
+                    const deleteReq = indexedDB.deleteDatabase(db.name);
+                    await new Promise((resolve, reject) => {
+                        deleteReq.onsuccess = () => resolve();
+                        deleteReq.onerror = () => reject(deleteReq.error);
+                        deleteReq.onblocked = () => setTimeout(resolve, 1000);
+                    });
+                }
+            }
+        } catch (e) {
+            console.log("Main: Ошибка при очистке файловых баз:", e.message);
+        }
         
         console.log("Main: Браузерное хранилище очищено");
         
@@ -379,19 +545,63 @@ async function init() {
     if (sp.get('app')) {
         args = ['app', sp.get('app')];
     } else {
-        args = ['jar', cheerpjWebRoot+"/games/" + (sp.get('jar') || "game.jar")];
-    }
-
-    console.log("Main: Запускаем FreeJ2ME с аргументами:", args);
-    
-    // Исправляем только настройки, не удаляя игру
-    if (args[0] === 'app') {
-        const appId = args[1];
-        console.log("Main: Исправляем настройки для игры:", appId);
+        // Используем LauncherUtil для инициализации JAR как приложения
+        const jarName = sp.get('jar') || "game.jar";
+        const appId = jarName.replace('.jar', '');
+        
+        console.log(`Main: Инициализируем JAR ${jarName} как app ${appId} через LauncherUtil...`);
         
         try {
             const LauncherUtil = await lib.pl.zb3.freej2me.launcher.LauncherUtil;
             const HashMap = await lib.java.util.HashMap;
+            
+            // Пытаемся инициализировать приложение с разными путями
+            let initSuccess = false;
+            const possiblePaths = [
+                "/app/jar/" + jarName,
+                "/files/" + jarName,
+                "/jar/" + jarName,
+                jarName
+            ];
+            
+            for (const path of possiblePaths) {
+                try {
+                    console.log(`Main: Пробуем инициализировать с путем: ${path}`);
+                    await LauncherUtil.initApp(appId, path);
+                    console.log(`Main: Приложение успешно инициализировано с путем: ${path}`);
+                    initSuccess = true;
+                    break;
+                } catch (initError) {
+                    console.log(`Main: Ошибка с путем ${path}:`, initError.message);
+                }
+            }
+            
+            if (!initSuccess) {
+                console.log("Main: Не удалось инициализировать ни с одним из путей");
+                
+                // Попробуем скопировать файл в нужную директорию
+                try {
+                    console.log("Main: Пытаемся скопировать файл в /files/...");
+                    const Files = await lib.java.nio.file.Files;
+                    const Paths = await lib.java.nio.file.Paths;
+                    const StandardCopyOption = await lib.java.nio.file.StandardCopyOption;
+                    
+                    const sourcePath = await Paths.get("/app/jar/" + jarName);
+                    const targetDir = await Paths.get("/files/" + appId);
+                    const targetPath = await Paths.get("/files/" + appId + "/app.jar");
+                    
+                    // Создаем директорию
+                    await Files.createDirectories(targetDir);
+                    console.log(`Main: Создана директория /files/${appId}`);
+                    
+                    // Копируем файл
+                    await Files.copy(sourcePath, targetPath, await StandardCopyOption.REPLACE_EXISTING);
+                    console.log(`Main: Файл скопирован в /files/${appId}/app.jar`);
+                    
+                } catch (copyError) {
+                    console.log("Main: Ошибка копирования файла:", copyError.message);
+                }
+            }
             
             // Создаем корректные настройки
             const correctSettings = await new HashMap();
@@ -409,14 +619,21 @@ async function init() {
             const emptyAppProps = await new HashMap();
             const emptySysProps = await new HashMap();
             
-            console.log("Main: Сохраняем исправленные настройки...");
+            console.log("Main: Сохраняем настройки приложения...");
             await LauncherUtil.saveApp(appId, correctSettings, emptyAppProps, emptySysProps);
-            console.log("Main: Настройки успешно исправлены");
+            console.log("Main: Настройки сохранены");
+            
+            // Используем app режим
+            args = ['app', appId];
             
         } catch (error) {
-            console.error("Main: Ошибка при исправлении настроек:", error);
+            console.error("Main: Ошибка LauncherUtil, fallback to jar:", error);
+            // Fallback to jar режим
+            args = ['jar', "/app/jar/" + jarName];
         }
     }
+
+    console.log("Main: Запускаем FreeJ2ME с аргументами:", args);
     
     FreeJ2ME.main(args).catch(e => {
         console.error("Main: Краш FreeJ2ME:", e);

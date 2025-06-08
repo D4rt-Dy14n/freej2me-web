@@ -24,30 +24,29 @@ export class LibMidi {
         this.context = context;
         this.destination = destination || context.destination;
         this.initialized = false;
-
         this._midiPlayer = null;
-
-        // we should have only one midiplayer initialized on demand, clients just use setsequence
-        // however, end-of-media events will be delivered to all listeners
-
     }
 
     async init() {
-        if (!this.context.audioWorklet) {
-            this.initialized = true;
-            return;
+        if (this.initialized) {
+            throw new Error("LibMidi already initialized");
         }
 
-        const addModuleTask = this.context.audioWorklet.addModule(new URL('worklet.js', import.meta.url).toString());
+        if (!this.context.audioWorklet || typeof AudioWorkletNode === 'undefined') {
+            throw new Error("AudioWorklet not supported");
+        }
 
-        const module = await WebAssembly.compileStreaming(fetch(new URL('libmidi.wasm', import.meta.url)));
+        const modulePath = new URL('./worklet.js', import.meta.url);
+        await this.context.audioWorklet.addModule(modulePath);
 
-        await addModuleTask;
+        const wasmPath = new URL('./libmidi.wasm', import.meta.url);
+        const wasmResponse = await fetch(wasmPath);
+        const wasmModule = await WebAssembly.compile(await wasmResponse.arrayBuffer());
 
-        // since we can't directly message the module.. yet
-        const bootstrapNode = new AudioWorkletNode(this.context, "bootstrap", {
+        const bootstrapNode = new AudioWorkletNode(this.context, 'bootstrap', {
+            outputChannelCount: [2],
             processorOptions: {
-                module
+                module: wasmModule
             }
         });
 
@@ -64,7 +63,6 @@ export class LibMidi {
         this.initialized = true;
     }
 
-
     async close() {
         if (this._midiPlayer) {
             this._midiPlayer.close();
@@ -72,20 +70,18 @@ export class LibMidi {
         }
 
         this.initialized = false;
-
-        // no context close as context is not ours
-        // close players?
     }
 
     get midiPlayer() {
         if (this.initialized && !this._midiPlayer) {
             this._midiPlayer = new MIDIPlayer(this.context, this.destination);
+        } else if (!this.initialized) {
+            // не инициализирован
         }
 
         return this._midiPlayer;
     }
 }
-
 
 // todo: we could make this bidirectional with methods and events, but at this point no need to do so
 class CmdClient {
@@ -93,7 +89,8 @@ class CmdClient {
         this.port = port;
         this.messageCounter = 0;
         this.pendingMessages = {};
-        this.port.addEventListener('message', this._handleMessage.bind(this));
+        this._messageHandler = this._handleMessage.bind(this);
+        this.port.addEventListener('message', this._messageHandler);
     }
 
     send(what, transfer=[]) {
@@ -120,9 +117,20 @@ class CmdClient {
             }
         }
     }
+
+    close() {
+        // Очищаем все ожидающие промисы
+        for (const handlers of Object.values(this.pendingMessages)) {
+            handlers.reject(new Error('Client closed'));
+        }
+        this.pendingMessages = {};
+        
+        // Удаляем слушатель событий
+        if (this.port && this._messageHandler) {
+            this.port.removeEventListener('message', this._messageHandler);
+        }
+    }
 }
-
-
 
 export class MIDIPlayer extends EventTarget {
     // this MUST be explicitly closed
@@ -140,9 +148,13 @@ export class MIDIPlayer extends EventTarget {
         this._unregister(args);
     });
 
+    static playerCount = 0;
 
     constructor(audioContext, destination) {
         super();
+
+        MIDIPlayer.playerCount++;
+        this.playerId = MIDIPlayer.playerCount;
 
         if (!audioContext.audioWorklet || typeof AudioWorkletNode === 'undefined') {
             return;
@@ -180,10 +192,13 @@ export class MIDIPlayer extends EventTarget {
     }
 
     async setSequence(buffer) {
+        // ФИКС: Полностью останавливаем предыдущее воспроизведение и сбрасываем цикл
+        this.send({cmd: "stop"});
+        // Сбрасываем любые активные циклы
+        this.send({cmd: "loop", times: 0});
+        
         const { duration } = await this.send({cmd: "setSequence", buffer}); //hmm, no transfer.. we're not sure
-        console.log('duration', duration);
         this.duration = duration;
-
     }
 
     play() {
@@ -212,8 +227,29 @@ export class MIDIPlayer extends EventTarget {
     }
 
     close() {
-        MIDIPlayer._unregister([this.client, this.node, this.gainNode]);
+        // Очищаем слушатели событий
+        this.removeAllListeners();
+        
+        // Закрываем client с очисткой слушателей
+        if (this.client) {
+            this.client.close();
+        }
+        
+        // Отключаем аудио ноды
+        if (this.node) {
+            this.node.disconnect();
+        }
+        if (this.gainNode) {
+            this.gainNode.disconnect();
+        }
+        
+        // Удаляем из финализатора
         MIDIPlayer._finalizer.unregister(this);
+        
+        // Обнуляем ссылки
+        this.client = null;
+        this.node = null;
+        this.gainNode = null;
     }
 
     get volume() {
@@ -224,4 +260,15 @@ export class MIDIPlayer extends EventTarget {
         this.gainNode.gain.value = v;
     }
 
+    removeAllListeners() {
+        // Удаляем все слушатели событий
+        const events = ['end-of-media'];
+        events.forEach(eventType => {
+            // Клонируем слушатели чтобы безопасно их удалить
+            const listeners = this.getEventListeners ? this.getEventListeners(eventType) : [];
+            listeners.forEach(listener => {
+                this.removeEventListener(eventType, listener);
+            });
+        });
+    }
 }

@@ -1,125 +1,519 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎮 FreeJ2ME Web - J2ME Games</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <meta charset="utf-8">
+    <title>FreeJ2ME - Game Manager</title>
+
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        * {
             margin: 0;
-            padding: 20px;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            padding: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-        h1 {
-            text-align: center;
             color: #333;
-            margin-bottom: 30px;
         }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .upload-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        .upload-zone {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .upload-zone:hover {
+            border-color: #764ba2;
+            background: rgba(118, 75, 162, 0.05);
+            transform: translateY(-2px);
+        }
+
+        .upload-zone.dragover {
+            border-color: #764ba2;
+            background: rgba(118, 75, 162, 0.1);
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .upload-text {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .upload-hint {
+            color: #666;
+            font-size: 1rem;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .games-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        .section-title {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 25px;
+            color: #333;
+            text-align: center;
+        }
+
         .games-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
         }
+
         .game-card {
-            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-            border-radius: 10px;
-            padding: 20px;
-            text-align: center;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            border: 1px solid #dee2e6;
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
         }
+
         .game-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+            border-color: #667eea;
         }
+
+        .game-header {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+        }
+
         .game-title {
+            font-size: 1.3rem;
             font-weight: 600;
             color: #333;
-            margin-bottom: 10px;
-            font-size: 1.1em;
+            margin-bottom: 5px;
         }
-        .play-btn {
+
+        .game-info {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .game-actions {
+            padding: 15px 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+        }
+
+        .btn-primary {
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-weight: 500;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-block;
-            transition: all 0.3s ease;
         }
-        .play-btn:hover {
-            transform: scale(1.05);
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
             box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
-        .info {
-            text-align: center;
-            margin-bottom: 30px;
-            padding: 15px;
-            background: rgba(102, 126, 234, 0.1);
-            border-radius: 8px;
+
+        .btn-secondary {
+            background: #f8f9fa;
+            color: #666;
+            border: 1px solid #ddd;
+        }
+
+        .btn-secondary:hover {
+            background: #e9ecef;
             color: #333;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.success {
+            background: #28a745;
+        }
+
+        .notification.error {
+            background: #dc3545;
+        }
+
+
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2.5rem;
+            }
+            
+            .games-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .game-actions {
+                justify-content: center;
+            }
+            
+            .btn {
+                flex: 1;
+                min-width: 120px;
+                justify-content: center;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎮 FreeJ2ME Web - J2ME Games</h1>
-        
-        <div class="info">
-            <p><strong>Готово для GitHub Pages!</strong> Каждая игра запускается в отдельном эмуляторе в вашем браузере.</p>
-            <p>Поддержка: клавиатура, сенсорный ввод, виртуальная клавиатура</p>
+        <div class="header">
+            <h1>🎮 FreeJ2ME</h1>
+            <p>Управление Java ME играми в браузере</p>
         </div>
 
-        <div class="games-grid">
-            <div class="game-card">
-                <div class="game-title">Doom II RPG</div>
-                <a href="run.html?jar=doom2rpg.jar" class="play-btn">Играть</a>
+        <div class="upload-section">
+            <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text">Загрузить JAR файл</div>
+                <div class="upload-hint">Нажмите или перетащите .jar файл сюда</div>
+                <input type="file" id="fileInput" class="file-input" accept=".jar" />
             </div>
-            
-            <div class="game-card">
-                <div class="game-title">Doom II RPG (176x208)</div>
-                <a href="run.html?jar=doom2rpg_176x208.jar" class="play-btn">Играть</a>
+            <div class="loading" id="uploadLoading">
+                <div class="spinner"></div>
+                <div>Загрузка файла...</div>
             </div>
-            
-            <div class="game-card">
-                <div class="game-title">Retro Snake</div>
-                <a href="run.html?jar=retrosnake.jar" class="play-btn">Играть</a>
-            </div>
-            
-            <div class="game-card">
-                <div class="game-title">Retro Snake (240x320)</div>
-                <a href="run.html?jar=retrosnake_240x320.jar" class="play-btn">Играть</a>
-            </div>
-            
-            <div class="game-card">
-                <div class="game-title">Nokia Snake</div>
-                <a href="run.html?jar=nokia_snake.jar" class="play-btn">Играть</a>
-            </div>
-            
-            <div class="game-card">
-                <div class="game-title">Snake</div>
-                <a href="run.html?jar=snake.jar" class="play-btn">Играть</a>
-            </div>
-            
-            <div class="game-card">
-                <div class="game-title">📂 Менеджер игр</div>
-                <a href="index.html" class="play-btn">Открыть</a>
+        </div>
+
+        <div class="games-section">
+            <h2 class="section-title">Установленные игры</h2>
+            <div class="games-grid" id="gamesList">
+                <div class="empty-state">
+                    <div class="empty-icon">🎯</div>
+                    <h3>Нет игр</h3>
+                    <p>Загрузите JAR файлы для начала</p>
+                </div>
             </div>
         </div>
     </div>
+
+
+
+    <script>
+        let currentGameProcess = null;
+
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            setupDragAndDrop();
+            setupFileInput();
+            loadGamesList();
+        });
+
+        // Настройка drag & drop
+        function setupDragAndDrop() {
+            const uploadZone = document.querySelector('.upload-zone');
+            
+            uploadZone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadZone.classList.add('dragover');
+            });
+            
+            uploadZone.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                uploadZone.classList.remove('dragover');
+            });
+            
+            uploadZone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadZone.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].name.endsWith('.jar')) {
+                    uploadGame(files[0]);
+                } else {
+                    showNotification('Пожалуйста, выберите JAR файл', 'error');
+                }
+            });
+        }
+
+        // Настройка file input
+        function setupFileInput() {
+            document.getElementById('fileInput').addEventListener('change', function(e) {
+                if (e.target.files.length > 0) {
+                    uploadGame(e.target.files[0]);
+                }
+            });
+        }
+
+        // Загрузка игры на сервер
+        async function uploadGame(file) {
+            const loading = document.getElementById('uploadLoading');
+            loading.style.display = 'block';
+            
+            try {
+                const formData = new FormData();
+                formData.append('jar', file);
+                
+                const response = await fetch('/api/jar/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    showNotification('Игра успешно загружена!', 'success');
+                    loadGamesList(); // Перезагрузка списка игр
+                    document.getElementById('fileInput').value = ''; // Очистка input
+                } else {
+                    throw new Error('Ошибка загрузки файла');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                showNotification('Ошибка загрузки игры', 'error');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        // Загрузка списка игр
+        async function loadGamesList() {
+            try {
+                const response = await fetch('/api/jar/');
+                const games = await response.json();
+                displayGamesList(games);
+            } catch (error) {
+                console.error('Ошибка загрузки списка игр:', error);
+                displayGamesList([]);
+            }
+        }
+
+        // Отображение списка игр
+        function displayGamesList(games) {
+            const gamesList = document.getElementById('gamesList');
+            
+            if (games.length === 0) {
+                gamesList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🎯</div>
+                        <h3>Нет игр</h3>
+                        <p>Загрузите JAR файлы для начала</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            gamesList.innerHTML = games.map(game => `
+                <div class="game-card">
+                    <div class="game-header">
+                        <div class="game-title">${game.name}</div>
+                        <div class="game-info">Размер: ${game.size}</div>
+                    </div>
+                    <div class="game-actions">
+                        <button class="btn btn-primary" onclick="runGame('${game.filename}')">
+                            ▶️ Запустить
+                        </button>
+                        <button class="btn btn-secondary" onclick="clearGameData('${game.filename}')">
+                            🗑️ Очистить данные
+                        </button>
+                        <button class="btn btn-danger" onclick="deleteGame('${game.filename}')">
+                            ❌ Удалить
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Запуск игры
+        async function runGame(filename) {
+            try {
+                // Перенаправляем на run.html с параметром jar
+                const runUrl = `/freej2me-web/run?jar=${encodeURIComponent(filename)}`;
+                window.location.href = runUrl;
+            } catch (error) {
+                console.error('Ошибка запуска игры:', error);
+                showNotification('Ошибка запуска игры', 'error');
+            }
+        }
+
+        // Закрытие игры (убираем, так как теперь используем run.html)
+        function closeGame() {
+            // Эта функция больше не нужна, так как игры запускаются в run.html
+        }
+
+        // Очистка данных игры
+        async function clearGameData(filename) {
+            if (confirm('Очистить все данные игры? Это действие нельзя отменить.')) {
+                try {
+                                         const response = await fetch(`/api/jar/${filename}/clear`, {
+                         method: 'POST'
+                     });
+                    
+                    if (response.ok) {
+                        showNotification('Данные игры очищены', 'success');
+                    } else {
+                        throw new Error('Ошибка очистки данных');
+                    }
+                } catch (error) {
+                    console.error('Ошибка:', error);
+                    showNotification('Ошибка очистки данных', 'error');
+                }
+            }
+        }
+
+        // Удаление игры
+        async function deleteGame(filename) {
+            if (confirm('Удалить игру? Это действие нельзя отменить.')) {
+                try {
+                                         const response = await fetch(`/api/jar/${filename}`, {
+                         method: 'DELETE'
+                     });
+                    
+                    if (response.ok) {
+                        showNotification('Игра удалена', 'success');
+                        loadGamesList(); // Перезагрузка списка
+                    } else {
+                        throw new Error('Ошибка удаления игры');
+                    }
+                } catch (error) {
+                    console.error('Ошибка:', error);
+                    showNotification('Ошибка удаления игры', 'error');
+                }
+            }
+        }
+
+        // Показ уведомлений
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            // Показываем уведомление
+            setTimeout(() => notification.classList.add('show'), 100);
+            
+            // Убираем уведомление через 3 секунды
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => document.body.removeChild(notification), 300);
+            }, 3000);
+        }
+    </script>
 </body>
 </html> 
