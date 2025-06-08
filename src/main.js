@@ -547,6 +547,7 @@ async function init() {
     } else {
         // Используем LauncherUtil для инициализации JAR как приложения
         const jarName = sp.get('jar') || "game.jar";
+        const isUploaded = sp.get('uploaded') === 'true';
         const appId = jarName.replace('.jar', '');
         
         console.log(`Main: Инициализируем JAR ${jarName} как app ${appId} через LauncherUtil...`);
@@ -580,43 +581,59 @@ async function init() {
             if (!initSuccess) {
                 console.log("Main: Не удалось инициализировать ни с одним из путей");
                 
-                // Попробуем загрузить файл через fetch и записать в CheerpJ FS
+                // Попробуем загрузить файл через cheerpJDataFS
                 try {
-                    console.log("Main: Загружаем JAR файл через fetch...");
-                    const response = await fetch("./games/" + jarName);
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    }
+                    console.log("Main: Загружаем JAR файл...");
+                    let jarData;
                     
-                    const jarData = await response.arrayBuffer();
+                    if (isUploaded) {
+                        // Загружаем из localStorage
+                        console.log("Main: Ищем загруженную игру в localStorage...");
+                        const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                        const game = uploadedGames.find(g => g.filename === jarName);
+                        
+                        if (!game) {
+                            throw new Error(`Загруженная игра ${jarName} не найдена в localStorage`);
+                        }
+                        
+                        // Конвертируем base64 обратно в ArrayBuffer
+                        const binary = atob(game.data);
+                        jarData = new ArrayBuffer(binary.length);
+                        const bytes = new Uint8Array(jarData);
+                        for (let i = 0; i < binary.length; i++) {
+                            bytes[i] = binary.charCodeAt(i);
+                        }
+                        console.log(`Main: Загружено ${jarData.byteLength} байт из localStorage`);
+                    } else {
+                        // Загружаем из файла
+                        console.log("Main: Загружаем JAR файл через fetch...");
+                        const response = await fetch("./games/" + jarName);
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        jarData = await response.arrayBuffer();
+                    }
                     console.log(`Main: Загружено ${jarData.byteLength} байт`);
                     
-                    // Записываем в CheerpJ виртуальную файловую систему
-                    const Files = await lib.java.nio.file.Files;
-                    const Paths = await lib.java.nio.file.Paths;
+                    // Используем cheerpJDataFS API для записи файла
+                    const targetPath = "/files/" + appId + "/app.jar";
+                    const targetDir = "/files/" + appId;
                     
-                    const targetDir = await Paths.get("/files/" + appId);
-                    const targetPath = await Paths.get("/files/" + appId + "/app.jar");
+                    // Создаем директорию через cheerpJDataFS
+                    await cheerpJDataFS.mkdir(targetDir, { recursive: true });
+                    console.log(`Main: Создана директория ${targetDir}`);
                     
-                    // Создаем директорию
-                    await Files.createDirectories(targetDir);
-                    console.log(`Main: Создана директория /files/${appId}`);
+                    // Записываем файл через cheerpJDataFS
+                    await cheerpJDataFS.writeFile(targetPath, new Uint8Array(jarData));
+                    console.log(`Main: Файл записан в ${targetPath}`);
                     
-                    // Конвертируем ArrayBuffer в Java byte array
-                    const jarBytes = new Int8Array(jarData);
-                    const javaByteArray = await lib.java.lang.reflect.Array.newInstance(await lib.java.lang.Byte.TYPE, jarBytes.length);
-                    
-                    for (let i = 0; i < jarBytes.length; i++) {
-                        await lib.java.lang.reflect.Array.setByte(javaByteArray, i, jarBytes[i]);
+                    // Проверяем что файл существует
+                    try {
+                        const stat = await cheerpJDataFS.stat(targetPath);
+                        console.log(`Main: Файл существует, размер: ${stat.size} байт`);
+                    } catch (statError) {
+                        console.log(`Main: Ошибка проверки файла: ${statError.message}`);
                     }
-                    
-                    // Записываем файл
-                    await Files.write(targetPath, javaByteArray);
-                    console.log(`Main: Файл записан в /files/${appId}/app.jar`);
-                    
-                    // Проверяем что файл создался
-                    const exists = await Files.exists(targetPath);
-                    console.log(`Main: Файл существует: ${exists}`);
                     
                 } catch (copyError) {
                     console.log("Main: Ошибка загрузки/записи файла:", copyError.message || copyError);
@@ -652,39 +669,57 @@ async function init() {
             // Попробуем загрузить JAR файл для прямого запуска
             try {
                 console.log("Main: Загружаем JAR для прямого запуска...");
-                const response = await fetch("./games/" + jarName);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
+                let jarData;
                 
-                const jarData = await response.arrayBuffer();
+                if (isUploaded) {
+                    // Загружаем из localStorage
+                    console.log("Main: Ищем загруженную игру в localStorage (fallback)...");
+                    const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                    const game = uploadedGames.find(g => g.filename === jarName);
+                    
+                    if (!game) {
+                        throw new Error(`Загруженная игра ${jarName} не найдена в localStorage`);
+                    }
+                    
+                    // Конвертируем base64 обратно в ArrayBuffer
+                    const binary = atob(game.data);
+                    jarData = new ArrayBuffer(binary.length);
+                    const bytes = new Uint8Array(jarData);
+                    for (let i = 0; i < binary.length; i++) {
+                        bytes[i] = binary.charCodeAt(i);
+                    }
+                    console.log(`Main: Загружено ${jarData.byteLength} байт из localStorage (fallback)`);
+                } else {
+                    // Загружаем из файла
+                    const response = await fetch("./games/" + jarName);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    jarData = await response.arrayBuffer();
+                }
                 console.log(`Main: Загружено ${jarData.byteLength} байт для прямого запуска`);
                 
-                // Записываем во временную директорию
-                const Files = await lib.java.nio.file.Files;
-                const Paths = await lib.java.nio.file.Paths;
-                
-                const tempDir = await Paths.get("/tmp");
-                const tempPath = await Paths.get("/tmp/" + jarName);
+                // Записываем во временную директорию через cheerpJDataFS
+                const tempPath = "/tmp/" + jarName;
                 
                 // Создаем директорию
-                await Files.createDirectories(tempDir);
+                await cheerpJDataFS.mkdir("/tmp", { recursive: true });
                 console.log(`Main: Создана временная директория /tmp`);
                 
-                // Конвертируем ArrayBuffer в Java byte array
-                const jarBytes = new Int8Array(jarData);
-                const javaByteArray = await lib.java.lang.reflect.Array.newInstance(await lib.java.lang.Byte.TYPE, jarBytes.length);
+                // Записываем файл
+                await cheerpJDataFS.writeFile(tempPath, new Uint8Array(jarData));
+                console.log(`Main: Файл записан в ${tempPath}`);
                 
-                for (let i = 0; i < jarBytes.length; i++) {
-                    await lib.java.lang.reflect.Array.setByte(javaByteArray, i, jarBytes[i]);
+                // Проверяем
+                try {
+                    const stat = await cheerpJDataFS.stat(tempPath);
+                    console.log(`Main: Временный файл существует, размер: ${stat.size} байт`);
+                } catch (statError) {
+                    console.log(`Main: Ошибка проверки временного файла: ${statError.message}`);
                 }
                 
-                // Записываем файл
-                await Files.write(tempPath, javaByteArray);
-                console.log(`Main: Файл записан в /tmp/${jarName}`);
-                
                 // Fallback to jar режим с временным файлом
-                args = ['jar', "/tmp/" + jarName];
+                args = ['jar', tempPath];
                 
             } catch (fetchError) {
                 console.error("Main: Ошибка загрузки JAR для fallback:", fetchError);
