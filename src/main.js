@@ -615,14 +615,47 @@ async function init() {
                     }
                     console.log(`Main: Загружено ${jarData.byteLength} байт`);
                     
-                    // Используем простой подход - пропускаем запись файла и используем прямо данные
-                    const targetPath = "/files/" + appId + "/app.jar";
-                    const targetDir = "/files/" + appId;
+                    // Используем правильный подход CheerpJ - запись в /str/ mount point
+                    const targetPath = "/str/" + jarName;
                     
-                    console.log(`Main: Попытка записи файла в ${targetPath} пропущена - будем использовать fallback`);
+                    console.log(`Main: Записываем JAR файл в /str/ mount point: ${targetPath}`);
                     
-                    // Принудительно вызываем ошибку чтобы перейти к fallback режиму
-                    throw new Error("Принудительный переход к fallback jar режиму");
+                    // Используем cheerpOSAddStringFile для записи файла в /str/ mount point
+                    const uint8Array = new Uint8Array(jarData);
+                    await cheerpOSAddStringFile(targetPath, uint8Array);
+                    console.log(`Main: Файл записан в ${targetPath}, размер: ${uint8Array.length} байт`);
+                    
+                    // Теперь копируем в нужную директорию через Java File API
+                    try {
+                        const Files = await lib.java.nio.file.Files;
+                        const Paths = await lib.java.nio.file.Paths;
+                        
+                        // Создаем target директорию
+                        const finalTargetDir = "/files/" + appId;
+                        const finalTargetPath = finalTargetDir + "/app.jar";
+                        
+                        const targetDirPath = await Paths.get(finalTargetDir);
+                        await Files.createDirectories(targetDirPath);
+                        console.log(`Main: Создана финальная директория ${finalTargetDir}`);
+                        
+                        // Копируем из /str/ в /files/
+                        const sourcePath = await Paths.get(targetPath);
+                        const finalTargetFilePath = await Paths.get(finalTargetPath);
+                        await Files.copy(sourcePath, finalTargetFilePath);
+                        console.log(`Main: Файл скопирован из ${targetPath} в ${finalTargetPath}`);
+                        
+                        // Проверяем финальный файл
+                        const exists = await Files.exists(finalTargetFilePath);
+                        if (exists) {
+                            const size = await Files.size(finalTargetFilePath);
+                            console.log(`Main: Финальный файл существует, размер: ${size} байт`);
+                        } else {
+                            throw new Error("Финальный файл не создался");
+                        }
+                    } catch (copyError) {
+                        console.log(`Main: Ошибка копирования файла: ${copyError.message}`);
+                        throw copyError;
+                    }
                     
                 } catch (copyError) {
                     console.log("Main: Ошибка загрузки/записи файла:", copyError.message || copyError);
@@ -688,15 +721,16 @@ async function init() {
                 }
                 console.log(`Main: Загружено ${jarData.byteLength} байт для прямого запуска`);
                 
-                // Создаем временный blob URL для передачи данных в CheerpJ
-                console.log(`Main: Создаем blob URL для JAR данных...`);
+                // Используем /str/ mount point для fallback
+                console.log(`Main: Записываем JAR файл в /str/ для fallback...`);
                 
-                const blob = new Blob([jarData], { type: 'application/java-archive' });
-                const blobUrl = URL.createObjectURL(blob);
-                console.log(`Main: Создан blob URL: ${blobUrl}`);
+                const tempPath = "/str/" + jarName;
+                const uint8Array = new Uint8Array(jarData);
+                await cheerpOSAddStringFile(tempPath, uint8Array);
+                console.log(`Main: Файл записан в ${tempPath} для fallback, размер: ${uint8Array.length} байт`);
                 
-                // Используем blob URL напрямую
-                args = ['jar', blobUrl];
+                // Используем /str/ путь напрямую
+                args = ['jar', tempPath];
                 
             } catch (fetchError) {
                 console.error("Main: Ошибка загрузки JAR для fallback:", fetchError);
