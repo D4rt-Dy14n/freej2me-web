@@ -249,26 +249,12 @@ function fillGamesList(games) {
 
         const link = document.createElement("a");
         
-        // Формируем URL с настройками игры
+        // Формируем URL только с appId - настройки берем из конфига
         const buildGameUrl = (mobile = false) => {
             let url = `run?app=${game.appId}`;
             if (mobile) {
                 url += "&mobile=1";
             }
-            
-            // Добавляем настройки игры как URL параметры
-            if (game.settings) {
-                const settingsParams = new URLSearchParams();
-                for (const [key, value] of Object.entries(game.settings)) {
-                    if (value !== undefined && value !== null && value !== '') {
-                        settingsParams.append(key, value);
-                    }
-                }
-                if (settingsParams.toString()) {
-                    url += '&' + settingsParams.toString();
-                }
-            }
-            
             return url;
         };
         

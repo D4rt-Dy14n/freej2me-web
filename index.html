@@ -460,11 +460,23 @@
                 <div class="form-group">
                     <label for="screenSize">Размер экрана:</label>
                     <select id="screenSize">
+                        <option value="96x65">96x65</option>
+                        <option value="96x96">96x96</option>
+                        <option value="104x80">104x80</option>
                         <option value="128x128">128x128</option>
-                        <option value="176x220">176x220 (Nokia)</option>
-                        <option value="240x320" selected>240x320 (стандарт)</option>
-                        <option value="320x240">320x240 (альбомная)</option>
-                        <option value="360x640">360x640 (современный)</option>
+                        <option value="132x176">132x176</option>
+                        <option value="128x160">128x160</option>
+                        <option value="176x208">176x208</option>
+                        <option value="176x220">176x220</option>
+                        <option value="208x208">208x208</option>
+                        <option value="240x320" selected>240x320</option>
+                        <option value="320x240">320x240</option>
+                        <option value="240x400">240x400</option>
+                        <option value="352x416">352x416</option>
+                        <option value="360x640">360x640</option>
+                        <option value="640x360">640x360</option>
+                        <option value="480x800">480x800</option>
+                        <option value="800x480">800x480</option>
                         <option value="custom">Пользовательский</option>
                     </select>
                 </div>
@@ -485,10 +497,11 @@
                 <div class="form-group">
                     <label for="phoneType">Тип телефона:</label>
                     <select id="phoneType">
-                        <option value="standard" selected>Стандартный</option>
-                        <option value="nokia">Nokia</option>
-                        <option value="siemens">Siemens</option>
-                        <option value="motorola">Motorola</option>
+                        <option value="Standard" selected>Standard</option>
+                        <option value="Nokia">Nokia</option>
+                        <option value="Motorola">Motorola</option>
+                        <option value="Siemens">Siemens</option>
+                        <option value="SonyEricsson">SonyEricsson</option>
                     </select>
                 </div>
 
@@ -508,9 +521,10 @@
                 <div class="form-group">
                     <label for="fontSize">Размер шрифта:</label>
                     <select id="fontSize">
-                        <option value="small">Маленький</option>
-                        <option value="medium" selected>Средний</option>
-                        <option value="large">Большой</option>
+                        <option value="0">Динамический</option>
+                        <option value="1">Маленький</option>
+                        <option value="2" selected>Средний</option>
+                        <option value="3">Большой</option>
                     </select>
                 </div>
 
@@ -753,11 +767,10 @@
         // Запуск игры
         async function runGame(filename, isUploaded = false) {
             try {
-                // Если это загруженная пользователем игра, добавляем флаг
-                let runUrl = `./run.html?jar=${encodeURIComponent(filename)}`;
-                if (isUploaded) {
-                    runUrl += '&uploaded=true';
-                }
+                // Запускаем только с jar параметром - все настройки берутся из конфига
+                // Убираем uploaded=true из URL так как это не нужно
+                const runUrl = `./run.html?jar=${encodeURIComponent(filename)}`;
+                console.log('Запуск игры с минимальными параметрами:', runUrl);
                 window.location.href = runUrl;
             } catch (error) {
                 console.error('Ошибка запуска игры:', error);
@@ -833,9 +846,9 @@
         const defaultGameSettings = {
             width: 240,
             height: 320,
-            phone: 'standard',
+            phone: 'Standard',  // Исправлено в соответствии с оригиналом
             dgFormat: '4444',
-            fontSize: 'medium',
+            fontSize: 2,  // 2 = Medium (числовое значение как в оригинале)
             limitFps: 0,
             sound: true,
             rotate: false,
@@ -876,7 +889,7 @@
             // Размер экрана
             const screenSize = `${settings.width}x${settings.height}`;
             const screenSizeSelect = document.getElementById('screenSize');
-            const standardSizes = ['128x128', '176x220', '240x320', '320x240', '360x640'];
+            const standardSizes = ['96x65', '96x96', '104x80', '128x128', '132x176', '128x160', '176x208', '176x220', '208x208', '240x320', '320x240', '240x400', '352x416', '360x640', '640x360', '480x800', '800x480'];
             
             if (standardSizes.includes(screenSize)) {
                 screenSizeSelect.value = screenSize;
@@ -912,7 +925,7 @@
         }
 
         // Сохранение настроек игры
-        function saveGameSettings() {
+        async function saveGameSettings() {
             if (!currentGameSettings) return;
 
             // Собираем настройки из формы
@@ -931,17 +944,29 @@
                 height: height,
                 phone: document.getElementById('phoneType').value,
                 dgFormat: document.getElementById('dgFormat').value,
-                fontSize: document.getElementById('fontSize').value,
+                fontSize: parseInt(document.getElementById('fontSize').value), // Преобразуем в число
                 limitFps: parseInt(document.getElementById('limitFps').value),
                 sound: document.getElementById('enableSound').checked,
                 rotate: document.getElementById('rotateScreen').checked,
                 forceFullscreen: document.getElementById('forceFullscreen').checked
             };
 
-            // Сохраняем в localStorage
+            // Сохраняем в localStorage для следующих запусков
             localStorage.setItem(`gameSettings_${currentGameSettings.filename}`, JSON.stringify(settings));
 
-            showNotification('Настройки сохранены!', 'success');
+            // Применяем настройки к запущенной игре (если есть)
+            if (window.parent && window.parent.applyGameSettings) {
+                try {
+                    await window.parent.applyGameSettings(currentGameSettings.filename.replace('.jar', ''), settings);
+                    showNotification('Настройки сохранены и применены к игре!', 'success');
+                } catch (error) {
+                    console.warn('Не удалось применить настройки к запущенной игре:', error);
+                    showNotification('Настройки сохранены (применятся при следующем запуске)', 'success');
+                }
+            } else {
+                showNotification('Настройки сохранены (применятся при следующем запуске)', 'success');
+            }
+
             closeGameSettings();
         }
 
@@ -966,38 +991,8 @@
             }
         };
 
-        // Модификация функции запуска игры для использования настроек
-        const originalRunGame = runGame;
-        runGame = function(filename, isUploaded = false) {
-            // Загружаем настройки игры
-            const savedSettings = localStorage.getItem(`gameSettings_${filename}`);
-            let settings = {};
-            
-            if (savedSettings) {
-                try {
-                    settings = JSON.parse(savedSettings);
-                } catch (e) {
-                    console.warn('Ошибка загрузки настроек игры:', e);
-                }
-            }
-
-            // Формируем URL с настройками
-            let runUrl = `./run.html?jar=${encodeURIComponent(filename)}`;
-            if (isUploaded) {
-                runUrl += '&uploaded=true';
-            }
-
-            // Добавляем настройки как URL параметры
-            if (Object.keys(settings).length > 0) {
-                const settingsParams = new URLSearchParams();
-                for (const [key, value] of Object.entries(settings)) {
-                    settingsParams.append(key, value);
-                }
-                runUrl += '&' + settingsParams.toString();
-            }
-
-            window.location.href = runUrl;
-        };
+        // Функция runGame уже определена выше и не должна добавлять параметры в URL
+        // Все настройки берутся из конфиг файлов в main.js
     </script>
 </body>
 </html> 

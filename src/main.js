@@ -380,7 +380,7 @@ async function init() {
                 
                 try {
                     // Добавляем таймауты для всех Java вызовов
-                    const processEventWithTimeout = async (eventProcessor, timeoutMs = 1000) => {
+                    const processEventWithTimeout = async (eventProcessor, timeoutMs = 100) => {
                         return Promise.race([
                             eventProcessor(),
                             new Promise((_, reject) => 
@@ -391,28 +391,23 @@ async function init() {
 
                     if (evt.kind == 'keydown') {
                         await processEventWithTimeout(async () => {
-                            const keyEvent = await new KeyEvent(...evt.args);
-                            await listener.keyPressed(keyEvent);
+                            await listener.keyPressed(await new KeyEvent(...evt.args));
                         });
                     } else if (evt.kind == 'keyup') {
                         await processEventWithTimeout(async () => {
-                            const keyEvent = await new KeyEvent(...evt.args);
-                            await listener.keyReleased(keyEvent);
+                            await listener.keyReleased(await new KeyEvent(...evt.args));
                         });
                     } else if (evt.kind == 'pointerpressed') {
                         await processEventWithTimeout(async () => {
-                            const pointerEvent = await new PointerEvent(evt.x, evt.y);
-                            await listener.pointerPressed(pointerEvent);
+                            await listener.pointerPressed(await new PointerEvent(evt.x, evt.y));
                         });
                     } else if (evt.kind == 'pointerdragged') {
                         await processEventWithTimeout(async () => {
-                            const pointerEvent = await new PointerEvent(evt.x, evt.y);
-                            await listener.pointerDragged(pointerEvent);
+                            await listener.pointerDragged(await new PointerEvent(evt.x, evt.y));
                         });
                     } else if (evt.kind == 'pointerreleased') {
                         await processEventWithTimeout(async () => {
-                            const pointerEvent = await new PointerEvent(evt.x, evt.y);
-                            await listener.pointerReleased(pointerEvent);
+                            await listener.pointerReleased(await new PointerEvent(evt.x, evt.y));
                         });
                     } else if (evt.kind == 'player-eom') {
                         await processEventWithTimeout(async () => {
@@ -459,38 +454,7 @@ async function init() {
     // Устанавливаем emulator для bridge callbacks
     window.emulator = lib;
 
-    // Мягкая очистка кэша без удаления файлов игр
-    try {
-        console.log("Main: Мягкая очистка кэша (без удаления файлов игр)...");
-        
-        // Очищаем только sessionStorage (временные данные сессии)
-        try {
-            const keysToRemove = [];
-            for (let i = 0; i < sessionStorage.length; i++) {
-                const key = sessionStorage.key(i);
-                if (key && (key.includes('cheerpj') || key.includes('CheerpJ') || key.includes('freej2me'))) {
-                    keysToRemove.push(key);
-                }
-            }
-            keysToRemove.forEach(key => {
-                sessionStorage.removeItem(key);
-                console.log(`Main: Удален sessionStorage ключ: ${key}`);
-            });
-        } catch (e) {
-            console.log("Main: Ошибка при очистке sessionStorage:", e.message);
-        }
-
-        // НЕ очищаем localStorage - там хранятся загруженные игры
-        console.log("Main: localStorage сохранен (содержит загруженные игры)");
-
-        // НЕ очищаем IndexedDB - там хранятся файлы и RMS данные игр
-        console.log("Main: IndexedDB сохранен (содержит файлы игр и RMS данные)");
-        
-        console.log("Main: Мягкая очистка завершена");
-        
-    } catch (error) {
-        console.error("Main: Ошибка при очистке кэша:", error);
-    }
+    console.log("CheerpJ runtime ready");
 
     const FreeJ2ME = await lib.org.recompile.freej2me.FreeJ2ME;
 
@@ -500,137 +464,13 @@ async function init() {
         const appId = sp.get('app');
         console.log(`Main: Запуск приложения ${appId} в app режиме`);
         
-        // Загружаем и применяем настройки даже для app режима
-        try {
-            const LauncherUtil = await lib.pl.zb3.freej2me.launcher.LauncherUtil;
-            const HashMap = await lib.java.util.HashMap;
-            const Files = await lib.java.nio.file.Files;
-            const Paths = await lib.java.nio.file.Paths;
-            
-            // Настройки по умолчанию
-            const defaults = {
-                phone: "standard",
-                fontSize: "medium", 
-                dgFormat: "4444",
-                width: 240,
-                height: 320,
-                sound: true,
-                rotate: false,
-                forceFullscreen: false,
-                limitFps: 0
-            };
-
-            // Загружаем сохраненные настройки из файлов
-            let savedFileSettings = {};
-            try {
-                console.log("Main: Загружаем сохраненные настройки из файлов для app режима...");
-                const settingsPath = `/files/${appId}/config/settings.conf`;
-                
-                // Используем CheerpJ API для чтения файлов
-                const settingsBlob = await cjFileBlob(settingsPath);
-                if (settingsBlob) {
-                    const settingsContent = await settingsBlob.text();
-                    console.log("Main: Найдены сохраненные настройки:", settingsContent);
-                    
-                    // Парсим настройки из формата "key: value" или "key=value"
-                    const lines = settingsContent.split('\n');
-                    for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (trimmed && !trimmed.startsWith('#')) {
-                            let key, value;
-                            
-                            // Поддерживаем оба формата: key=value и key: value
-                            if (trimmed.includes('=')) {
-                                const equalIndex = trimmed.indexOf('=');
-                                key = trimmed.substring(0, equalIndex).trim();
-                                value = trimmed.substring(equalIndex + 1).trim();
-                            } else if (trimmed.includes(':')) {
-                                const colonIndex = trimmed.indexOf(':');
-                                key = trimmed.substring(0, colonIndex).trim();
-                                value = trimmed.substring(colonIndex + 1).trim();
-                            }
-                            
-                            if (key && value) {
-                                // Конвертируем значения в правильные типы
-                                if (value === 'true' || value === 'false') {
-                                    savedFileSettings[key] = value === 'true';
-                                } else if (!isNaN(value)) {
-                                    savedFileSettings[key] = parseInt(value);
-                                } else if (value === 'on') {
-                                    savedFileSettings[key] = true;
-                                } else if (value === 'off') {
-                                    savedFileSettings[key] = false;
-                                } else {
-                                    savedFileSettings[key] = value;
-                                }
-                            }
-                        }
-                    }
-                    console.log("Main: Разобранные настройки из файла (app режим):", savedFileSettings);
-                } else {
-                    console.log("Main: Файл настроек не найден для app режима");
-                }
-            } catch (loadError) {
-                console.log("Main: Ошибка загрузки настроек из файла (app режим):", loadError.message);
-            }
-
-            // Применяем настройки: defaults <- savedFileSettings <- URL параметры
-            const settings = { ...defaults, ...savedFileSettings };
-            
-            // URL параметры имеют наивысший приоритет
-            for (const [key, defaultValue] of Object.entries(defaults)) {
-                const urlValue = sp.get(key);
-                if (urlValue !== null) {
-                    // Конвертируем значения в правильный тип
-                    if (typeof defaultValue === 'boolean') {
-                        settings[key] = urlValue === 'true';
-                    } else if (typeof defaultValue === 'number') {
-                        settings[key] = parseInt(urlValue) || defaultValue;
-                    } else {
-                        settings[key] = urlValue;
-                    }
-                }
-            }
-
-            console.log("Main: Финальные настройки для app режима:", settings);
-
-            // Если есть изменения в настройках, сохраняем их
-            const hasUrlSettings = Object.keys(defaults).some(key => sp.get(key) !== null);
-            if (hasUrlSettings || Object.keys(savedFileSettings).length === 0) {
-                console.log("Main: Обновляем настройки приложения в app режиме...");
-                
-                const correctSettings = await new HashMap();
-                await correctSettings.put("phone", settings.phone);
-                await correctSettings.put("fontSize", settings.fontSize);
-                await correctSettings.put("dgFormat", settings.dgFormat);
-                await correctSettings.put("width", settings.width);
-                await correctSettings.put("height", settings.height);
-                await correctSettings.put("sound", settings.sound ? "on" : "off");
-                await correctSettings.put("rotate", settings.rotate ? "on" : "off");
-                await correctSettings.put("forceFullscreen", settings.forceFullscreen ? "on" : "off");
-                await correctSettings.put("textureDisableFilter", "off");
-                await correctSettings.put("queuedPaint", "off");
-                
-                if (settings.limitFps > 0) {
-                    await correctSettings.put("limitFps", settings.limitFps);
-                }
-                
-                const emptyAppProps = await new HashMap();
-                const emptySysProps = await new HashMap();
-                
-                await LauncherUtil.saveApp(appId, correctSettings, emptyAppProps, emptySysProps);
-                console.log("Main: Настройки обновлены в app режиме");
-            }
-            
-        } catch (error) {
-            console.error("Main: Ошибка обработки настроек в app режиме:", error);
-        }
+        // Загружаем настройки только из файла конфига
+        await loadSettingsFromConfig(appId, lib);
         
         args = ['app', appId];
     } else {
         // Используем LauncherUtil для инициализации JAR как приложения
         const jarName = sp.get('jar') || "game.jar";
-        const isUploaded = sp.get('uploaded') === 'true';
         const appId = jarName.replace('.jar', '');
         
         console.log(`Main: Инициализируем JAR ${jarName} как app ${appId} через LauncherUtil...`);
@@ -658,10 +498,36 @@ async function init() {
             if (appExists && jarExists) {
                 // Приложение уже существует, не копируем JAR заново
                 console.log(`Main: Приложение ${appId} уже существует, используем существующую установку`);
-                initSuccess = true;
                 
-                // Применяем только настройки из URL без перезаписи JAR файла
-                console.log("Main: Обновляем настройки для существующего приложения...");
+                // Для существующих приложений только проверяем настройки, но НЕ создаем дефолтные
+                const settingsPath = `/files/${appId}/config/settings.conf`;
+                try {
+                    const settingsBlob = await cjFileBlob(settingsPath);
+                    if (settingsBlob) {
+                        const settingsContent = await settingsBlob.text();
+                        if (settingsContent.trim()) {
+                            // Проверяем на наличие неправильных fontSize значений (строки вместо чисел)
+                            if (settingsContent.includes('fontSize:medium') || settingsContent.includes('fontSize:small') || settingsContent.includes('fontSize:large')) {
+                                console.log("Main: Найдены старые настройки с текстовыми fontSize, пересоздаем...");
+                                // Удаляем старые настройки
+                                const settingsFilePath = await Paths.get(settingsPath);
+                                await Files.deleteIfExists(settingsFilePath);
+                                // Создаем новые
+                                await saveDefaultSettings(appId, lib, LauncherUtil);
+                            } else {
+                                console.log("Main: Найдены корректные настройки для существующего приложения");
+                            }
+                        } else {
+                            console.log("Main: Настройки пустые, но приложение существует - пропускаем создание дефолтных");
+                        }
+                    } else {
+                        console.log("Main: Файл настроек не найден, но приложение существует - пропускаем создание дефолтных");
+                    }
+                } catch (error) {
+                    console.log("Main: Ошибка проверки настроек существующего приложения:", error.message);
+                }
+                
+                initSuccess = true;
             } else {
                 // Приложение не существует, пытаемся инициализировать с разными путями
                 const possiblePaths = [
@@ -683,282 +549,288 @@ async function init() {
                         console.log(`Main: Ошибка с путем ${path}:`, initError.message);
                     }
                 }
-            }
-            
-            if (!initSuccess) {
-                console.log("Main: Не удалось инициализировать приложение стандартным способом, попробуем JAR загрузку...");
                 
-                try {
-                    console.log("Main: Загружаем JAR файл для копирования в /files/...");
-                    let jarData;
-                    
-                    if (isUploaded) {
-                        // Загружаем из localStorage
-                        console.log("Main: Ищем загруженную игру в localStorage...");
+                // Если инициализация не удалась, пытаемся вручную скопировать файл
+                if (!initSuccess) {
+                    console.log("Main: Инициализация не удалась, пытаемся скопировать файл вручную...");
+                    try {
+                        // Сначала проверяем загруженную игру из localStorage
                         const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
-                        const game = uploadedGames.find(g => g.filename === jarName);
+                        const uploadedGame = uploadedGames.find(game => game.filename === jarName);
                         
-                        if (!game) {
-                            throw new Error(`Загруженная игра ${jarName} не найдена в localStorage`);
-                        }
+                        let jarData;
                         
-                        // Конвертируем base64 обратно в ArrayBuffer
-                        const binary = atob(game.data);
-                        jarData = new ArrayBuffer(binary.length);
-                        const bytes = new Uint8Array(jarData);
-                        for (let i = 0; i < binary.length; i++) {
-                            bytes[i] = binary.charCodeAt(i);
-                        }
-                        console.log(`Main: Загружено ${jarData.byteLength} байт из localStorage`);
-                    } else {
-                        // Загружаем из файла
-                        console.log("Main: Загружаем JAR файл через fetch...");
-                        const response = await fetch("./games/" + jarName);
-                        if (!response.ok) {
-                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                        }
-                        jarData = await response.arrayBuffer();
-                    }
-                    console.log(`Main: Загружено ${jarData.byteLength} байт`);
-                    
-                    // Используем правильный подход CheerpJ - запись в /str/ mount point
-                    const targetPath = "/str/" + jarName;
-                    
-                    console.log(`Main: Записываем JAR файл в /str/ mount point: ${targetPath}`);
-                    
-                    // Используем cheerpOSAddStringFile для записи файла в /str/ mount point
-                    const uint8Array = new Uint8Array(jarData);
-                    await cheerpOSAddStringFile(targetPath, uint8Array);
-                    console.log(`Main: Файл записан в ${targetPath}, размер: ${uint8Array.length} байт`);
-                    
-                    // Проверяем, не существует ли уже файл в /files/
-                    const finalTargetDir = "/files/" + appId;
-                    const finalTargetPath = finalTargetDir + "/app.jar";
-                    const finalTargetFilePath = await Paths.get(finalTargetPath);
-                    const fileAlreadyExists = await Files.exists(finalTargetFilePath);
-                    
-                    if (fileAlreadyExists) {
-                        console.log(`Main: Файл ${finalTargetPath} уже существует, пропускаем копирование (сохраняем RMS данные)`);
-                        initSuccess = true;
-                    } else {
-                        // Копируем только если файл не существует
-                        try {
-                            // Создаем target директорию
-                            const targetDirPath = await Paths.get(finalTargetDir);
-                            await Files.createDirectories(targetDirPath);
-                            console.log(`Main: Создана финальная директория ${finalTargetDir}`);
-                        
-                            // Копируем из /str/ в /files/
-                            const sourcePath = await Paths.get(targetPath);
-                            await Files.copy(sourcePath, finalTargetFilePath);
-                            console.log(`Main: Файл скопирован из ${targetPath} в ${finalTargetPath}`);
-                            
-                            // Проверяем финальный файл
-                            const exists = await Files.exists(finalTargetFilePath);
-                            if (exists) {
-                                const size = await Files.size(finalTargetFilePath);
-                                console.log(`Main: Финальный файл существует, размер: ${size} байт`);
-                                initSuccess = true;
-                            } else {
-                                throw new Error("Финальный файл не создался");
+                        if (uploadedGame && uploadedGame.data) {
+                            console.log(`Main: Найдена загруженная игра ${jarName} в localStorage`);
+                            // Декодируем base64 данные
+                            const base64 = uploadedGame.data;
+                            const binary = atob(base64);
+                            jarData = new ArrayBuffer(binary.length);
+                            const uint8Array = new Uint8Array(jarData);
+                            for (let i = 0; i < binary.length; i++) {
+                                uint8Array[i] = binary.charCodeAt(i);
                             }
-                        } catch (copyError) {
-                            console.log(`Main: Ошибка копирования файла: ${copyError.message}`);
-                            throw copyError;
+                            console.log(`Main: Декодировано ${jarData.byteLength} байт из localStorage`);
+                        } else {
+                            // Загружаем JAR файл через fetch
+                            console.log(`Main: Загружаем ${jarName} через fetch...`);
+                            const response = await fetch("./games/" + jarName);
+                            if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                            }
+                            jarData = await response.arrayBuffer();
+                            console.log(`Main: Загружено ${jarData.byteLength} байт`);
                         }
+                        
+                        // Создаем директории
+                        await Files.createDirectories(appDirPath);
+                        console.log(`Main: Создана директория ${appDir}`);
+                        
+                        // Записываем файл через CheerpJ API
+                        const uint8Array = new Uint8Array(jarData);
+                        const targetPath = "/str/" + appId + "_app.jar";
+                        await cheerpOSAddStringFile(targetPath, uint8Array);
+                        console.log(`Main: Файл записан в ${targetPath}`);
+                        
+                        // Копируем из /str/ в /files/
+                        const sourcePath = await Paths.get(targetPath);
+                        await Files.copy(sourcePath, appJarFilePath);
+                        console.log(`Main: Файл скопирован в ${appJarPath}`);
+                        
+                        // Проверяем финальный файл
+                        const exists = await Files.exists(appJarFilePath);
+                        if (exists) {
+                            const size = await Files.size(appJarFilePath);
+                            console.log(`Main: Финальный файл создан, размер: ${size} байт`);
+                            initSuccess = true;
+                        } else {
+                            throw new Error("Финальный файл не создался");
+                        }
+                        
+                    } catch (copyError) {
+                        console.error("Main: Ошибка копирования файла:", copyError.message);
                     }
-                    
-                } catch (jarError) {
-                    console.log("Main: Ошибка загрузки/записи файла:", jarError.message || jarError);
                 }
             }
             
-            // Создаем настройки с учетом переданных параметров
-            const correctSettings = await new HashMap();
-            
-            // Настройки по умолчанию
-            const defaults = {
-                phone: "standard",
-                fontSize: "medium", 
-                dgFormat: "4444",
-                width: 240,
-                height: 320,
-                sound: true,
-                rotate: false,
-                forceFullscreen: false,
-                limitFps: 0
-            };
-
-            // Сначала загружаем сохраненные настройки из файлов (если они есть)
-            let savedFileSettings = {};
-            if (initSuccess) {
+            // Сохраняем дефолтные настройки только если приложение новое
+            if (initSuccess && !appExists) {
+                console.log("Main: Создаем дефолтные настройки для нового приложения...");
+                
+                // Удаляем старые настройки если есть, чтобы убрать поле fps
                 try {
-                    console.log("Main: Загружаем сохраненные настройки из файлов...");
-                    const settingsPath = `/files/${appId}/config/settings.conf`;
-                    
-                    // Используем CheerpJ API для чтения файлов
-                    const settingsBlob = await cjFileBlob(settingsPath);
-                    if (settingsBlob) {
-                        const settingsContent = await settingsBlob.text();
-                        console.log("Main: Найдены сохраненные настройки:", settingsContent);
-                        
-                        // Парсим настройки из формата "key: value" или "key=value"
-                        const lines = settingsContent.split('\n');
-                        for (const line of lines) {
-                            const trimmed = line.trim();
-                            if (trimmed && !trimmed.startsWith('#')) {
-                                let key, value;
-                                
-                                // Поддерживаем оба формата: key=value и key: value
-                                if (trimmed.includes('=')) {
-                                    const equalIndex = trimmed.indexOf('=');
-                                    key = trimmed.substring(0, equalIndex).trim();
-                                    value = trimmed.substring(equalIndex + 1).trim();
-                                } else if (trimmed.includes(':')) {
-                                    const colonIndex = trimmed.indexOf(':');
-                                    key = trimmed.substring(0, colonIndex).trim();
-                                    value = trimmed.substring(colonIndex + 1).trim();
-                                }
-                                
-                                if (key && value) {
-                                    // Конвертируем значения в правильные типы
-                                    if (value === 'true' || value === 'false') {
-                                        savedFileSettings[key] = value === 'true';
-                                    } else if (!isNaN(value)) {
-                                        savedFileSettings[key] = parseInt(value);
-                                    } else if (value === 'on') {
-                                        savedFileSettings[key] = true;
-                                    } else if (value === 'off') {
-                                        savedFileSettings[key] = false;
-                                    } else {
-                                        savedFileSettings[key] = value;
-                                    }
-                                }
-                            }
-                        }
-                        console.log("Main: Разобранные настройки из файла:", savedFileSettings);
-                    } else {
-                        console.log("Main: Файл настроек не найден, используем defaults");
-                    }
-                } catch (loadError) {
-                    console.log("Main: Ошибка загрузки настроек из файла:", loadError.message);
+                    const oldSettingsPath = `/files/${appId}/config/settings.conf`;
+                    const settingsFilePath = await Paths.get(oldSettingsPath);
+                    await Files.deleteIfExists(settingsFilePath);
+                    console.log("Main: Удалили старые настройки");
+                } catch (e) {
+                    console.log("Main: Старые настройки отсутствуют");
                 }
+                
+                await saveDefaultSettings(appId, lib, LauncherUtil);
             }
-
-            // Применяем настройки: defaults <- savedFileSettings <- URL параметры
-            const settings = { ...defaults, ...savedFileSettings };
-            
-            // URL параметры имеют наивысший приоритет
-            for (const [key, defaultValue] of Object.entries(defaults)) {
-                const urlValue = sp.get(key);
-                if (urlValue !== null) {
-                    // Конвертируем значения в правильный тип
-                    if (typeof defaultValue === 'boolean') {
-                        settings[key] = urlValue === 'true';
-                    } else if (typeof defaultValue === 'number') {
-                        settings[key] = parseInt(urlValue) || defaultValue;
-                    } else {
-                        settings[key] = urlValue;
-                    }
-                }
-            }
-
-            console.log("Main: Финальные настройки для применения:", settings);
-
-            // Устанавливаем настройки в HashMap
-            await correctSettings.put("phone", settings.phone);
-            await correctSettings.put("fontSize", settings.fontSize);
-            await correctSettings.put("dgFormat", settings.dgFormat);
-            await correctSettings.put("width", settings.width);
-            await correctSettings.put("height", settings.height);
-            await correctSettings.put("sound", settings.sound ? "on" : "off");
-            await correctSettings.put("rotate", settings.rotate ? "on" : "off");
-            await correctSettings.put("forceFullscreen", settings.forceFullscreen ? "on" : "off");
-            await correctSettings.put("textureDisableFilter", "off");
-            await correctSettings.put("queuedPaint", "off");
-            
-            // Устанавливаем лимит FPS если указан
-            if (settings.limitFps > 0) {
-                await correctSettings.put("limitFps", settings.limitFps);
-            }
-            
-            const emptyAppProps = await new HashMap();
-            const emptySysProps = await new HashMap();
-            
-            console.log("Main: Сохраняем настройки приложения...");
-            await LauncherUtil.saveApp(appId, correctSettings, emptyAppProps, emptySysProps);
-            console.log("Main: Настройки сохранены");
             
             // Используем app режим
             args = ['app', appId];
             
         } catch (error) {
             console.error("Main: Ошибка LauncherUtil, fallback to jar:", error);
-            
-            // Попробуем загрузить JAR файл для прямого запуска
-            try {
-                console.log("Main: Загружаем JAR для прямого запуска...");
-                let jarData;
-                
-                if (isUploaded) {
-                    // Загружаем из localStorage
-                    console.log("Main: Ищем загруженную игру в localStorage (fallback)...");
-                    const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
-                    const game = uploadedGames.find(g => g.filename === jarName);
-                    
-                    if (!game) {
-                        throw new Error(`Загруженная игра ${jarName} не найдена в localStorage`);
-                    }
-                    
-                    // Конвертируем base64 обратно в ArrayBuffer
-                    const binary = atob(game.data);
-                    jarData = new ArrayBuffer(binary.length);
-                    const bytes = new Uint8Array(jarData);
-                    for (let i = 0; i < binary.length; i++) {
-                        bytes[i] = binary.charCodeAt(i);
-                    }
-                    console.log(`Main: Загружено ${jarData.byteLength} байт из localStorage (fallback)`);
-                } else {
-                    // Загружаем из файла
-                    const response = await fetch("./games/" + jarName);
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    }
-                    jarData = await response.arrayBuffer();
-                }
-                console.log(`Main: Загружено ${jarData.byteLength} байт для прямого запуска`);
-                
-                // Используем /str/ mount point для fallback
-                console.log(`Main: Записываем JAR файл в /str/ для fallback...`);
-                
-                const tempPath = "/str/" + jarName;
-                const uint8Array = new Uint8Array(jarData);
-                await cheerpOSAddStringFile(tempPath, uint8Array);
-                console.log(`Main: Файл записан в ${tempPath} для fallback, размер: ${uint8Array.length} байт`);
-                
-                // Используем /str/ путь напрямую
-                args = ['jar', tempPath];
-                
-            } catch (fetchError) {
-                console.error("Main: Ошибка загрузки JAR для fallback:", fetchError);
-                // Последняя попытка с исходным путем
-                args = ['jar', "./games/" + jarName];
-            }
+            // Fallback to jar режим
+            args = ['jar', "/app/jar/" + jarName];
         }
     }
 
     console.log("Main: Запускаем FreeJ2ME с аргументами:", args);
     
-    FreeJ2ME.main(args).catch(e => {
+    try {
+        await FreeJ2ME.main(args);
+        console.log("Main: FreeJ2ME запущен успешно");
+    } catch (e) {
         console.error("Main: Краш FreeJ2ME:", e);
-        e.printStackTrace();
+        if (e.printStackTrace) {
+            e.printStackTrace();
+        }
         document.getElementById('loading').textContent = 'Crash :(';
-    });
+    }
 
     console.log("Main: Инициализация завершена");
     } catch (error) {
         console.error("Main: Ошибка инициализации:", error);
         document.getElementById('loading').textContent = 'Ошибка инициализации: ' + error.message;
+    }
+}
+
+// Функция для загрузки настроек из конфига
+async function loadSettingsFromConfig(appId, lib) {
+    try {
+        console.log(`Main: Загружаем настройки для приложения ${appId} из конфига...`);
+        
+        const settingsPath = `/files/${appId}/config/settings.conf`;
+        const settingsBlob = await cjFileBlob(settingsPath);
+        
+        if (settingsBlob) {
+            const settingsContent = await settingsBlob.text();
+            console.log(`Main: Найдены сохраненные настройки: "${settingsContent}"`);
+            
+            if (settingsContent.trim()) {
+                console.log("Main: Настройки загружены из файла успешно");
+            } else {
+                console.log("Main: Файл настроек пустой - используем настройки по умолчанию без сохранения");
+            }
+        } else {
+            console.log("Main: Файл настроек не найден - используем настройки по умолчанию без сохранения");
+        }
+        
+    } catch (error) {
+        console.error("Main: Ошибка загрузки настроек из конфига:", error);
+    }
+}
+
+// Функция для сохранения дефолтных настроек 
+async function saveDefaultSettings(appId, libOrLauncherUtil, LauncherUtil) {
+    try {
+        console.log(`Main: Сохраняем дефолтные настройки для приложения ${appId}...`);
+        
+        let lib, launcherUtil;
+        
+        // Если второй параметр это lib объект
+        if (libOrLauncherUtil && libOrLauncherUtil.pl) {
+            lib = libOrLauncherUtil;
+            launcherUtil = LauncherUtil || await lib.pl.zb3.freej2me.launcher.LauncherUtil;
+        } else {
+            // Если второй параметр это LauncherUtil (старый вызов)
+            launcherUtil = libOrLauncherUtil;
+            // lib должен быть доступен глобально
+            lib = window.lib;
+        }
+        
+        const HashMap = await lib.java.util.HashMap;
+        
+        // Создаем дефолтные настройки без привязки к URL
+        console.log(`Main: Создаем дефолтные настройки для нового приложения ${appId}`);
+        
+        const correctSettings = await new HashMap();
+        
+        // Валидируем числовые значения чтобы избежать NumberFormatException
+        const validatedWidth = "240";  // всегда строка числа
+        const validatedHeight = "320"; // всегда строка числа
+        
+        await correctSettings.put("phone", "Standard");
+        await correctSettings.put("fontSize", "2");  // 2 = Medium (как в оригинале)
+        await correctSettings.put("dgFormat", "4444");
+        await correctSettings.put("width", validatedWidth);
+        await correctSettings.put("height", validatedHeight);
+        await correctSettings.put("sound", "on");
+        await correctSettings.put("rotate", "off");
+        await correctSettings.put("forceFullscreen", "off");
+        await correctSettings.put("textureDisableFilter", "off");
+        await correctSettings.put("queuedPaint", "off");
+        await correctSettings.put("limitFps", "0");
+        
+        // Удаляем старое поле fps если оно есть (из Java кода)
+        if (await correctSettings.containsKey("fps")) {
+            await correctSettings.remove("fps");
+            console.log("Main: Удалили старое поле fps из настроек");
+        }
+        
+        console.log(`Main: Валидированные настройки: width=${validatedWidth}, height=${validatedHeight}`);
+        
+        const emptyAppProps = await new HashMap();
+        const emptySysProps = await new HashMap();
+        
+        console.log("Main: Вызываем LauncherUtil.saveApp...");
+        await launcherUtil.saveApp(appId, correctSettings, emptyAppProps, emptySysProps);
+        console.log("Main: Дефолтные настройки сохранены");
+        
+        // Проверяем что сохранилось и что нет старого поля fps
+        setTimeout(async () => {
+            try {
+                const newSettingsBlob = await cjFileBlob(`/files/${appId}/config/settings.conf`);
+                if (newSettingsBlob) {
+                    const newContent = await newSettingsBlob.text();
+                    console.log(`Main: Проверка сохранения - содержимое файла: "${newContent}"`);
+                    
+                    // Проверяем что нет старого поля fps
+                    if (newContent.includes('fps:')) {
+                        console.error("Main: ОШИБКА! В файле все еще есть старое поле fps!");
+                    } else {
+                        console.log("Main: ✓ Поле fps отсутствует, настройки корректны");
+                    }
+                } else {
+                    console.log("Main: Проверка сохранения - файл не найден!");
+                }
+            } catch (checkError) {
+                console.error("Main: Ошибка проверки сохранения:", checkError);
+            }
+        }, 2000);
+        
+    } catch (error) {
+        console.error("Main: Ошибка сохранения дефолтных настроек:", error);
+        console.error("Main: Stack trace:", error.stack);
+    }
+}
+
+// Функция для применения настроек к запущенной игре
+window.applyGameSettings = async function(appId, settings) {
+    console.log(`Main: Применяем настройки к запущенной игре ${appId}:`, settings);
+    
+    if (!window.emulator) {
+        throw new Error("Эмулятор не запущен");
+    }
+    
+    try {
+        // Получаем Config из эмулятора
+        const Config = await window.emulator.org.recompile.freej2me.Config;
+        
+        // Применяем настройки
+        const settingsMap = await Config.settings;
+        
+        // Преобразуем настройки в правильный формат
+        await settingsMap.put("width", settings.width.toString());
+        await settingsMap.put("height", settings.height.toString());
+        await settingsMap.put("phone", settings.phone);
+        await settingsMap.put("dgFormat", settings.dgFormat);
+        await settingsMap.put("fontSize", settings.fontSize.toString());
+        await settingsMap.put("limitFps", settings.limitFps.toString());
+        await settingsMap.put("sound", settings.sound ? "on" : "off");
+        await settingsMap.put("rotate", settings.rotate ? "on" : "off");
+        await settingsMap.put("forceFullscreen", settings.forceFullscreen ? "on" : "off");
+        await settingsMap.put("textureDisableFilter", "off");
+        await settingsMap.put("queuedPaint", "off");
+        
+        // Удаляем старое поле fps если оно есть
+        if (await settingsMap.containsKey("fps")) {
+            await settingsMap.remove("fps");
+            console.log("Main: Удалили старое поле fps из настроек запущенной игры");
+        }
+        
+        // Сохраняем настройки в файл
+        await saveUpdatedSettings(appId, settingsMap);
+        
+        console.log("Main: Настройки успешно применены к запущенной игре");
+        return true;
+    } catch (error) {
+        console.error("Main: Ошибка применения настроек:", error);
+        throw error;
+    }
+};
+
+// Вспомогательная функция для сохранения обновленных настроек
+async function saveUpdatedSettings(appId, settingsMap) {
+    try {
+        const LauncherUtil = await window.emulator.pl.zb3.freej2me.launcher.LauncherUtil;
+        const HashMap = await window.emulator.java.util.HashMap;
+        
+        // Сохраняем настройки через LauncherUtil
+        const emptyAppProps = await new HashMap();
+        const emptySysProps = await new HashMap();
+        
+        await LauncherUtil.saveApp(appId, settingsMap, emptyAppProps, emptySysProps);
+        
+        console.log(`Main: Обновленные настройки сохранены для ${appId}`);
+    } catch (error) {
+        console.error(`Main: Ошибка сохранения обновленных настроек для ${appId}:`, error);
+        throw error;
     }
 }
 
