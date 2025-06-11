@@ -454,11 +454,11 @@ async function init() {
     // Устанавливаем emulator для bridge callbacks
     window.emulator = lib;
 
-    // Очищаем кэш FreeJ2ME для свежего запуска
+    // Мягкая очистка кэша без удаления файлов игр
     try {
-        console.log("Main: Очищаем кэш браузера...");
+        console.log("Main: Мягкая очистка кэша (без удаления файлов игр)...");
         
-        // Очищаем sessionStorage
+        // Очищаем только sessionStorage (временные данные сессии)
         try {
             const keysToRemove = [];
             for (let i = 0; i < sessionStorage.length; i++) {
@@ -475,67 +475,16 @@ async function init() {
             console.log("Main: Ошибка при очистке sessionStorage:", e.message);
         }
 
-        // Очищаем localStorage
-        try {
-            const localKeysToRemove = [];
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && (key.includes('cheerpj') || key.includes('CheerpJ') || key.includes('freej2me'))) {
-                    localKeysToRemove.push(key);
-                }
-            }
-            localKeysToRemove.forEach(key => {
-                localStorage.removeItem(key);
-                console.log(`Main: Удален localStorage ключ: ${key}`);
-            });
-        } catch (e) {
-            console.log("Main: Ошибка при очистке localStorage:", e.message);
-        }
+        // НЕ очищаем localStorage - там хранятся загруженные игры
+        console.log("Main: localStorage сохранен (содержит загруженные игры)");
 
-        // Очищаем IndexedDB (CheerpJ виртуальная файловая система)
-        try {
-            const databases = await indexedDB.databases();
-            for (const db of databases) {
-                if (db.name && (db.name.includes('cheerpj') || db.name.includes('CheerpJ') || db.name.includes('/CheerpJ'))) {
-                    console.log(`Main: Удаляем базу данных: ${db.name}`);
-                    const deleteReq = indexedDB.deleteDatabase(db.name);
-                    await new Promise((resolve, reject) => {
-                        deleteReq.onsuccess = () => resolve();
-                        deleteReq.onerror = () => reject(deleteReq.error);
-                        deleteReq.onblocked = () => {
-                            console.log(`Main: База данных ${db.name} заблокирована, принудительно удаляем...`);
-                            setTimeout(resolve, 1000);
-                        };
-                    });
-                }
-            }
-        } catch (e) {
-            console.log("Main: Ошибка при очистке IndexedDB:", e.message);
-        }
-
-        // Дополнительная очистка - удаляем временные папки игр
-        try {
-            console.log("Main: Удаляем временные файлы игр...");
-            const databases = await indexedDB.databases();
-            for (const db of databases) {
-                if (db.name && db.name.includes('files')) {
-                    console.log(`Main: Удаляем файловую базу: ${db.name}`);
-                    const deleteReq = indexedDB.deleteDatabase(db.name);
-                    await new Promise((resolve, reject) => {
-                        deleteReq.onsuccess = () => resolve();
-                        deleteReq.onerror = () => reject(deleteReq.error);
-                        deleteReq.onblocked = () => setTimeout(resolve, 1000);
-                    });
-                }
-            }
-        } catch (e) {
-            console.log("Main: Ошибка при очистке файловых баз:", e.message);
-        }
+        // НЕ очищаем IndexedDB - там хранятся файлы и RMS данные игр
+        console.log("Main: IndexedDB сохранен (содержит файлы игр и RMS данные)");
         
-        console.log("Main: Браузерное хранилище очищено");
+        console.log("Main: Мягкая очистка завершена");
         
     } catch (error) {
-        console.error("Main: Ошибка при очистке хранилища:", error);
+        console.error("Main: Ошибка при очистке кэша:", error);
     }
 
     const FreeJ2ME = await lib.org.recompile.freej2me.FreeJ2ME;
@@ -556,30 +505,54 @@ async function init() {
             const LauncherUtil = await lib.pl.zb3.freej2me.launcher.LauncherUtil;
             const HashMap = await lib.java.util.HashMap;
             
-            // Пытаемся инициализировать приложение с разными путями
-            let initSuccess = false;
-            const possiblePaths = [
-                "./games/" + jarName,
-                "/app/jar/" + jarName,
-                "/files/" + jarName,
-                "/jar/" + jarName,
-                jarName
-            ];
+            // Сначала проверяем, существует ли приложение уже в /files/
+            const Files = await lib.java.nio.file.Files;
+            const Paths = await lib.java.nio.file.Paths;
             
-            for (const path of possiblePaths) {
-                try {
-                    console.log(`Main: Пробуем инициализировать с путем: ${path}`);
-                    await LauncherUtil.initApp(appId, path);
-                    console.log(`Main: Приложение успешно инициализировано с путем: ${path}`);
-                    initSuccess = true;
-                    break;
-                } catch (initError) {
-                    console.log(`Main: Ошибка с путем ${path}:`, initError.message);
+            const appDir = "/files/" + appId;
+            const appJarPath = appDir + "/app.jar";
+            const appDirPath = await Paths.get(appDir);
+            const appJarFilePath = await Paths.get(appJarPath);
+            
+            const appExists = await Files.exists(appDirPath);
+            const jarExists = await Files.exists(appJarFilePath);
+            
+            console.log(`Main: Проверяем существование: ${appDir} = ${appExists}, ${appJarPath} = ${jarExists}`);
+            
+            let initSuccess = false;
+            
+            if (appExists && jarExists) {
+                // Приложение уже существует, не копируем JAR заново
+                console.log(`Main: Приложение ${appId} уже существует, используем существующую установку`);
+                initSuccess = true;
+                
+                // Применяем только настройки из URL без перезаписи JAR файла
+                console.log("Main: Обновляем настройки для существующего приложения...");
+            } else {
+                // Приложение не существует, пытаемся инициализировать с разными путями
+                const possiblePaths = [
+                    "./games/" + jarName,
+                    "/app/jar/" + jarName,
+                    "/files/" + jarName,
+                    "/jar/" + jarName,
+                    jarName
+                ];
+                
+                for (const path of possiblePaths) {
+                    try {
+                        console.log(`Main: Пробуем инициализировать с путем: ${path}`);
+                        await LauncherUtil.initApp(appId, path);
+                        console.log(`Main: Приложение успешно инициализировано с путем: ${path}`);
+                        initSuccess = true;
+                        break;
+                    } catch (initError) {
+                        console.log(`Main: Ошибка с путем ${path}:`, initError.message);
+                    }
                 }
             }
             
             if (!initSuccess) {
-                console.log("Main: Не удалось инициализировать ни с одним из путей");
+                console.log("Main: Не удалось инициализировать ни с одним из путей, загружаем JAR файл...");
                 
                 // Попробуем загрузить файл через cheerpJDataFS
                 try {
@@ -625,40 +598,45 @@ async function init() {
                     await cheerpOSAddStringFile(targetPath, uint8Array);
                     console.log(`Main: Файл записан в ${targetPath}, размер: ${uint8Array.length} байт`);
                     
-                    // Теперь копируем в нужную директорию через Java File API
-                    try {
-                        const Files = await lib.java.nio.file.Files;
-                        const Paths = await lib.java.nio.file.Paths;
-                        
-                        // Создаем target директорию
-                        const finalTargetDir = "/files/" + appId;
-                        const finalTargetPath = finalTargetDir + "/app.jar";
-                        
-                        const targetDirPath = await Paths.get(finalTargetDir);
-                        await Files.createDirectories(targetDirPath);
-                        console.log(`Main: Создана финальная директория ${finalTargetDir}`);
+                    // Проверяем, не существует ли уже файл в /files/
+                    const finalTargetDir = "/files/" + appId;
+                    const finalTargetPath = finalTargetDir + "/app.jar";
+                    const finalTargetFilePath = await Paths.get(finalTargetPath);
+                    const fileAlreadyExists = await Files.exists(finalTargetFilePath);
                     
-                        // Копируем из /str/ в /files/
-                        const sourcePath = await Paths.get(targetPath);
-                        const finalTargetFilePath = await Paths.get(finalTargetPath);
-                        await Files.copy(sourcePath, finalTargetFilePath);
-                        console.log(`Main: Файл скопирован из ${targetPath} в ${finalTargetPath}`);
+                    if (fileAlreadyExists) {
+                        console.log(`Main: Файл ${finalTargetPath} уже существует, пропускаем копирование (сохраняем RMS данные)`);
+                        initSuccess = true;
+                    } else {
+                        // Копируем только если файл не существует
+                        try {
+                            // Создаем target директорию
+                            const targetDirPath = await Paths.get(finalTargetDir);
+                            await Files.createDirectories(targetDirPath);
+                            console.log(`Main: Создана финальная директория ${finalTargetDir}`);
                         
-                        // Проверяем финальный файл
-                        const exists = await Files.exists(finalTargetFilePath);
-                        if (exists) {
-                            const size = await Files.size(finalTargetFilePath);
-                            console.log(`Main: Финальный файл существует, размер: ${size} байт`);
-                        } else {
-                            throw new Error("Финальный файл не создался");
+                            // Копируем из /str/ в /files/
+                            const sourcePath = await Paths.get(targetPath);
+                            await Files.copy(sourcePath, finalTargetFilePath);
+                            console.log(`Main: Файл скопирован из ${targetPath} в ${finalTargetPath}`);
+                            
+                            // Проверяем финальный файл
+                            const exists = await Files.exists(finalTargetFilePath);
+                            if (exists) {
+                                const size = await Files.size(finalTargetFilePath);
+                                console.log(`Main: Финальный файл существует, размер: ${size} байт`);
+                                initSuccess = true;
+                            } else {
+                                throw new Error("Финальный файл не создался");
+                            }
+                        } catch (copyError) {
+                            console.log(`Main: Ошибка копирования файла: ${copyError.message}`);
+                            throw copyError;
                         }
-                    } catch (copyError) {
-                        console.log(`Main: Ошибка копирования файла: ${copyError.message}`);
-                        throw copyError;
                     }
                     
-                } catch (copyError) {
-                    console.log("Main: Ошибка загрузки/записи файла:", copyError.message || copyError);
+                } catch (jarError) {
+                    console.log("Main: Ошибка загрузки/записи файла:", jarError.message || jarError);
                 }
             }
             
