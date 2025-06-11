@@ -286,6 +286,133 @@
                 justify-content: center;
             }
         }
+
+        /* Модальное окно настроек */
+        .settings-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+        }
+
+        .settings-modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .settings-content {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .settings-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .close-btn {
+            background: #f0f0f0;
+            border: none;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            cursor: pointer;
+            font-size: 1.2em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .close-btn:hover {
+            background: #e0e0e0;
+        }
+
+        .settings-form {
+            display: grid;
+            gap: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            color: #555;
+            font-size: 0.9em;
+        }
+
+        .form-group select,
+        .form-group input {
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.2s;
+        }
+
+        .form-group select:focus,
+        .form-group input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+
+        .form-group-inline {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 5px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #007bff;
+        }
+
+        .settings-actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 2px solid #f0f0f0;
+        }
+
+        .settings-actions .btn {
+            flex: 1;
+        }
     </style>
 </head>
 <body>
@@ -320,7 +447,103 @@
         </div>
     </div>
 
+    <!-- Модальное окно настроек игры -->
+    <div class="settings-modal" id="settingsModal">
+        <div class="settings-content">
+            <div class="settings-header">
+                <div class="settings-title" id="settingsTitle">Настройки игры</div>
+                <button class="close-btn" onclick="closeGameSettings()">×</button>
+            </div>
+            
+            <div class="settings-form">
+                <!-- Размер экрана -->
+                <div class="form-group">
+                    <label for="screenSize">Размер экрана:</label>
+                    <select id="screenSize">
+                        <option value="128x128">128x128</option>
+                        <option value="176x220">176x220 (Nokia)</option>
+                        <option value="240x320" selected>240x320 (стандарт)</option>
+                        <option value="320x240">320x240 (альбомная)</option>
+                        <option value="360x640">360x640 (современный)</option>
+                        <option value="custom">Пользовательский</option>
+                    </select>
+                </div>
 
+                <!-- Пользовательские размеры -->
+                <div class="form-group-inline" id="customSizeGroup" style="display: none;">
+                    <div class="form-group">
+                        <label for="customWidth">Ширина:</label>
+                        <input type="number" id="customWidth" min="64" max="800" value="240">
+                    </div>
+                    <div class="form-group">
+                        <label for="customHeight">Высота:</label>
+                        <input type="number" id="customHeight" min="64" max="800" value="320">
+                    </div>
+                </div>
+
+                <!-- Тип телефона -->
+                <div class="form-group">
+                    <label for="phoneType">Тип телефона:</label>
+                    <select id="phoneType">
+                        <option value="standard" selected>Стандартный</option>
+                        <option value="nokia">Nokia</option>
+                        <option value="siemens">Siemens</option>
+                        <option value="motorola">Motorola</option>
+                    </select>
+                </div>
+
+                <!-- DirectGraphics формат -->
+                <div class="form-group">
+                    <label for="dgFormat">Формат DirectGraphics:</label>
+                    <select id="dgFormat">
+                        <option value="444">444 RGB (12-bit)</option>
+                        <option value="4444" selected>4444 ARGB (16-bit, рекомендуется)</option>
+                        <option value="565">565 RGB (16-bit)</option>
+                        <option value="888">888 RGB (24-bit)</option>
+                        <option value="8888">8888 RGB (32-bit)</option>
+                    </select>
+                </div>
+
+                <!-- Размер шрифта -->
+                <div class="form-group">
+                    <label for="fontSize">Размер шрифта:</label>
+                    <select id="fontSize">
+                        <option value="small">Маленький</option>
+                        <option value="medium" selected>Средний</option>
+                        <option value="large">Большой</option>
+                    </select>
+                </div>
+
+                <!-- Ограничение FPS -->
+                <div class="form-group">
+                    <label for="limitFps">Ограничение FPS (0 = без ограничений):</label>
+                    <input type="number" id="limitFps" min="0" max="120" value="0">
+                </div>
+
+                <!-- Переключатели -->
+                <div class="form-group">
+                    <label>Дополнительные настройки:</label>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="enableSound" checked>
+                        <label for="enableSound">Звук</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="rotateScreen">
+                        <label for="rotateScreen">Поворот экрана</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="forceFullscreen">
+                        <label for="forceFullscreen">Принудительный полноэкранный режим</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-actions">
+                <button class="btn btn-secondary" onclick="resetToDefaults()">По умолчанию</button>
+                <button class="btn btn-primary" onclick="saveGameSettings()">Сохранить</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         let currentGameProcess = null;
@@ -511,6 +734,9 @@
                         <button class="btn btn-primary" onclick="runGame('${game.filename}', ${game.isUploaded || false})">
                             ▶️ Запустить
                         </button>
+                        <button class="btn btn-secondary" onclick="openGameSettings('${game.filename}', '${game.name}', ${game.isUploaded || false})">
+                            ⚙️ Настройки
+                        </button>
                         <button class="btn btn-secondary" onclick="clearGameData('${game.filename}')">
                             🗑️ Очистить данные
                         </button>
@@ -599,6 +825,179 @@
                 setTimeout(() => document.body.removeChild(notification), 300);
             }, 3000);
         }
+
+        // === НАСТРОЙКИ ИГР ===
+        let currentGameSettings = null;
+
+        // Настройки по умолчанию
+        const defaultGameSettings = {
+            width: 240,
+            height: 320,
+            phone: 'standard',
+            dgFormat: '4444',
+            fontSize: 'medium',
+            limitFps: 0,
+            sound: true,
+            rotate: false,
+            forceFullscreen: false
+        };
+
+        // Открытие настроек игры
+        function openGameSettings(filename, gameName, isUploaded) {
+            currentGameSettings = {
+                filename: filename,
+                gameName: gameName,
+                isUploaded: isUploaded,
+                settings: { ...defaultGameSettings }
+            };
+
+            // Загружаем сохраненные настройки
+            const savedSettings = localStorage.getItem(`gameSettings_${filename}`);
+            if (savedSettings) {
+                try {
+                    currentGameSettings.settings = { ...defaultGameSettings, ...JSON.parse(savedSettings) };
+                } catch (e) {
+                    console.warn('Ошибка загрузки настроек игры:', e);
+                }
+            }
+
+            // Устанавливаем заголовок
+            document.getElementById('settingsTitle').textContent = `Настройки: ${gameName}`;
+
+            // Заполняем форму
+            populateSettingsForm(currentGameSettings.settings);
+
+            // Показываем модальное окно
+            document.getElementById('settingsModal').classList.add('show');
+        }
+
+        // Заполнение формы настроек
+        function populateSettingsForm(settings) {
+            // Размер экрана
+            const screenSize = `${settings.width}x${settings.height}`;
+            const screenSizeSelect = document.getElementById('screenSize');
+            const standardSizes = ['128x128', '176x220', '240x320', '320x240', '360x640'];
+            
+            if (standardSizes.includes(screenSize)) {
+                screenSizeSelect.value = screenSize;
+            } else {
+                screenSizeSelect.value = 'custom';
+                document.getElementById('customSizeGroup').style.display = 'grid';
+            }
+            
+            document.getElementById('customWidth').value = settings.width;
+            document.getElementById('customHeight').value = settings.height;
+
+            // Остальные настройки
+            document.getElementById('phoneType').value = settings.phone;
+            document.getElementById('dgFormat').value = settings.dgFormat;
+            document.getElementById('fontSize').value = settings.fontSize;
+            document.getElementById('limitFps').value = settings.limitFps;
+            document.getElementById('enableSound').checked = settings.sound;
+            document.getElementById('rotateScreen').checked = settings.rotate;
+            document.getElementById('forceFullscreen').checked = settings.forceFullscreen;
+
+            // Обработчик изменения размера экрана
+            screenSizeSelect.onchange = function() {
+                const customGroup = document.getElementById('customSizeGroup');
+                if (this.value === 'custom') {
+                    customGroup.style.display = 'grid';
+                } else {
+                    customGroup.style.display = 'none';
+                    const [width, height] = this.value.split('x').map(Number);
+                    document.getElementById('customWidth').value = width;
+                    document.getElementById('customHeight').value = height;
+                }
+            };
+        }
+
+        // Сохранение настроек игры
+        function saveGameSettings() {
+            if (!currentGameSettings) return;
+
+            // Собираем настройки из формы
+            const screenSize = document.getElementById('screenSize').value;
+            let width, height;
+            
+            if (screenSize === 'custom') {
+                width = parseInt(document.getElementById('customWidth').value);
+                height = parseInt(document.getElementById('customHeight').value);
+            } else {
+                [width, height] = screenSize.split('x').map(Number);
+            }
+
+            const settings = {
+                width: width,
+                height: height,
+                phone: document.getElementById('phoneType').value,
+                dgFormat: document.getElementById('dgFormat').value,
+                fontSize: document.getElementById('fontSize').value,
+                limitFps: parseInt(document.getElementById('limitFps').value),
+                sound: document.getElementById('enableSound').checked,
+                rotate: document.getElementById('rotateScreen').checked,
+                forceFullscreen: document.getElementById('forceFullscreen').checked
+            };
+
+            // Сохраняем в localStorage
+            localStorage.setItem(`gameSettings_${currentGameSettings.filename}`, JSON.stringify(settings));
+
+            showNotification('Настройки сохранены!', 'success');
+            closeGameSettings();
+        }
+
+        // Сброс к настройкам по умолчанию
+        function resetToDefaults() {
+            if (confirm('Сбросить все настройки к значениям по умолчанию?')) {
+                populateSettingsForm(defaultGameSettings);
+                showNotification('Настройки сброшены к значениям по умолчанию', 'success');
+            }
+        }
+
+        // Закрытие модального окна настроек
+        function closeGameSettings() {
+            document.getElementById('settingsModal').classList.remove('show');
+            currentGameSettings = null;
+        }
+
+        // Закрытие по клику вне модального окна
+        document.getElementById('settingsModal').onclick = function(e) {
+            if (e.target === this) {
+                closeGameSettings();
+            }
+        };
+
+        // Модификация функции запуска игры для использования настроек
+        const originalRunGame = runGame;
+        runGame = function(filename, isUploaded = false) {
+            // Загружаем настройки игры
+            const savedSettings = localStorage.getItem(`gameSettings_${filename}`);
+            let settings = {};
+            
+            if (savedSettings) {
+                try {
+                    settings = JSON.parse(savedSettings);
+                } catch (e) {
+                    console.warn('Ошибка загрузки настроек игры:', e);
+                }
+            }
+
+            // Формируем URL с настройками
+            let runUrl = `./run.html?jar=${encodeURIComponent(filename)}`;
+            if (isUploaded) {
+                runUrl += '&uploaded=true';
+            }
+
+            // Добавляем настройки как URL параметры
+            if (Object.keys(settings).length > 0) {
+                const settingsParams = new URLSearchParams();
+                for (const [key, value] of Object.entries(settings)) {
+                    settingsParams.append(key, value);
+                }
+                runUrl += '&' + settingsParams.toString();
+            }
+
+            window.location.href = runUrl;
+        };
     </script>
 </body>
 </html> 
