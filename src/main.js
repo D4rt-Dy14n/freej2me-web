@@ -492,7 +492,121 @@ async function init() {
     let args;
 
     if (sp.get('app')) {
-        args = ['app', sp.get('app')];
+        const appId = sp.get('app');
+        console.log(`Main: Запуск приложения ${appId} в app режиме`);
+        
+        // Загружаем и применяем настройки даже для app режима
+        try {
+            const LauncherUtil = await lib.pl.zb3.freej2me.launcher.LauncherUtil;
+            const HashMap = await lib.java.util.HashMap;
+            const Files = await lib.java.nio.file.Files;
+            const Paths = await lib.java.nio.file.Paths;
+            
+            // Настройки по умолчанию
+            const defaults = {
+                phone: "standard",
+                fontSize: "medium", 
+                dgFormat: "4444",
+                width: 240,
+                height: 320,
+                sound: true,
+                rotate: false,
+                forceFullscreen: false,
+                limitFps: 0
+            };
+
+            // Загружаем сохраненные настройки из файлов
+            let savedFileSettings = {};
+            try {
+                console.log("Main: Загружаем сохраненные настройки из файлов для app режима...");
+                const settingsPath = `/files/${appId}/config/settings.conf`;
+                const settingsFilePath = await Paths.get(settingsPath);
+                
+                if (await Files.exists(settingsFilePath)) {
+                    const settingsContent = await Files.readString(settingsFilePath);
+                    console.log("Main: Найдены сохраненные настройки:", settingsContent);
+                    
+                    // Парсим настройки из формата "key: value"
+                    const lines = settingsContent.split('\n');
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (trimmed && trimmed.includes(':')) {
+                            const [key, value] = trimmed.split(':').map(s => s.trim());
+                            if (key && value) {
+                                // Конвертируем значения в правильные типы
+                                if (value === 'true' || value === 'false') {
+                                    savedFileSettings[key] = value === 'true';
+                                } else if (!isNaN(value)) {
+                                    savedFileSettings[key] = parseInt(value);
+                                } else if (value === 'on') {
+                                    savedFileSettings[key] = true;
+                                } else if (value === 'off') {
+                                    savedFileSettings[key] = false;
+                                } else {
+                                    savedFileSettings[key] = value;
+                                }
+                            }
+                        }
+                    }
+                    console.log("Main: Разобранные настройки из файла (app режим):", savedFileSettings);
+                }
+            } catch (loadError) {
+                console.log("Main: Ошибка загрузки настроек из файла (app режим):", loadError.message);
+            }
+
+            // Применяем настройки: defaults <- savedFileSettings <- URL параметры
+            const settings = { ...defaults, ...savedFileSettings };
+            
+            // URL параметры имеют наивысший приоритет
+            for (const [key, defaultValue] of Object.entries(defaults)) {
+                const urlValue = sp.get(key);
+                if (urlValue !== null) {
+                    // Конвертируем значения в правильный тип
+                    if (typeof defaultValue === 'boolean') {
+                        settings[key] = urlValue === 'true';
+                    } else if (typeof defaultValue === 'number') {
+                        settings[key] = parseInt(urlValue) || defaultValue;
+                    } else {
+                        settings[key] = urlValue;
+                    }
+                }
+            }
+
+            console.log("Main: Финальные настройки для app режима:", settings);
+
+            // Если есть изменения в настройках, сохраняем их
+            const hasUrlSettings = Object.keys(defaults).some(key => sp.get(key) !== null);
+            if (hasUrlSettings || Object.keys(savedFileSettings).length === 0) {
+                console.log("Main: Обновляем настройки приложения в app режиме...");
+                
+                const correctSettings = await new HashMap();
+                await correctSettings.put("phone", settings.phone);
+                await correctSettings.put("fontSize", settings.fontSize);
+                await correctSettings.put("dgFormat", settings.dgFormat);
+                await correctSettings.put("width", settings.width);
+                await correctSettings.put("height", settings.height);
+                await correctSettings.put("sound", settings.sound ? "on" : "off");
+                await correctSettings.put("rotate", settings.rotate ? "on" : "off");
+                await correctSettings.put("forceFullscreen", settings.forceFullscreen ? "on" : "off");
+                await correctSettings.put("textureDisableFilter", "off");
+                await correctSettings.put("queuedPaint", "off");
+                
+                if (settings.limitFps > 0) {
+                    await correctSettings.put("limitFps", settings.limitFps);
+                }
+                
+                const emptyAppProps = await new HashMap();
+                const emptySysProps = await new HashMap();
+                
+                await LauncherUtil.saveApp(appId, correctSettings, emptyAppProps, emptySysProps);
+                console.log("Main: Настройки обновлены в app режиме");
+            }
+            
+        } catch (error) {
+            console.error("Main: Ошибка обработки настроек в app режиме:", error);
+        }
+        
+        args = ['app', appId];
     } else {
         // Используем LauncherUtil для инициализации JAR как приложения
         const jarName = sp.get('jar') || "game.jar";
@@ -552,11 +666,10 @@ async function init() {
             }
             
             if (!initSuccess) {
-                console.log("Main: Не удалось инициализировать ни с одним из путей, загружаем JAR файл...");
+                console.log("Main: Не удалось инициализировать приложение стандартным способом, попробуем JAR загрузку...");
                 
-                // Попробуем загрузить файл через cheerpJDataFS
                 try {
-                    console.log("Main: Загружаем JAR файл...");
+                    console.log("Main: Загружаем JAR файл для копирования в /files/...");
                     let jarData;
                     
                     if (isUploaded) {
@@ -656,8 +769,53 @@ async function init() {
                 limitFps: 0
             };
 
-            // Применяем настройки из URL параметров (переданные из index.html)
-            const settings = {};
+            // Сначала загружаем сохраненные настройки из файлов (если они есть)
+            let savedFileSettings = {};
+            if (initSuccess) {
+                try {
+                    console.log("Main: Загружаем сохраненные настройки из файлов...");
+                    const settingsPath = `/files/${appId}/config/settings.conf`;
+                    const settingsFilePath = await Paths.get(settingsPath);
+                    
+                    if (await Files.exists(settingsFilePath)) {
+                        const settingsContent = await Files.readString(settingsFilePath);
+                        console.log("Main: Найдены сохраненные настройки:", settingsContent);
+                        
+                        // Парсим настройки из формата "key: value"
+                        const lines = settingsContent.split('\n');
+                        for (const line of lines) {
+                            const trimmed = line.trim();
+                            if (trimmed && trimmed.includes(':')) {
+                                const [key, value] = trimmed.split(':').map(s => s.trim());
+                                if (key && value) {
+                                    // Конвертируем значения в правильные типы
+                                    if (value === 'true' || value === 'false') {
+                                        savedFileSettings[key] = value === 'true';
+                                    } else if (!isNaN(value)) {
+                                        savedFileSettings[key] = parseInt(value);
+                                    } else if (value === 'on') {
+                                        savedFileSettings[key] = true;
+                                    } else if (value === 'off') {
+                                        savedFileSettings[key] = false;
+                                    } else {
+                                        savedFileSettings[key] = value;
+                                    }
+                                }
+                            }
+                        }
+                        console.log("Main: Разобранные настройки из файла:", savedFileSettings);
+                    } else {
+                        console.log("Main: Файл настроек не найден, используем defaults");
+                    }
+                } catch (loadError) {
+                    console.log("Main: Ошибка загрузки настроек из файла:", loadError.message);
+                }
+            }
+
+            // Применяем настройки: defaults <- savedFileSettings <- URL параметры
+            const settings = { ...defaults, ...savedFileSettings };
+            
+            // URL параметры имеют наивысший приоритет
             for (const [key, defaultValue] of Object.entries(defaults)) {
                 const urlValue = sp.get(key);
                 if (urlValue !== null) {
@@ -669,12 +827,10 @@ async function init() {
                     } else {
                         settings[key] = urlValue;
                     }
-                } else {
-                    settings[key] = defaultValue;
                 }
             }
 
-            console.log("Main: Применяем настройки игры:", settings);
+            console.log("Main: Финальные настройки для применения:", settings);
 
             // Устанавливаем настройки в HashMap
             await correctSettings.put("phone", settings.phone);

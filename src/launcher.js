@@ -248,11 +248,35 @@ function fillGamesList(games) {
         item.className = "game-item";
 
         const link = document.createElement("a");
-        link.href = "run?app=" + game.appId;
+        
+        // Формируем URL с настройками игры
+        const buildGameUrl = (mobile = false) => {
+            let url = `run?app=${game.appId}`;
+            if (mobile) {
+                url += "&mobile=1";
+            }
+            
+            // Добавляем настройки игры как URL параметры
+            if (game.settings) {
+                const settingsParams = new URLSearchParams();
+                for (const [key, value] of Object.entries(game.settings)) {
+                    if (value !== undefined && value !== null && value !== '') {
+                        settingsParams.append(key, value);
+                    }
+                }
+                if (settingsParams.toString()) {
+                    url += '&' + settingsParams.toString();
+                }
+            }
+            
+            return url;
+        };
+        
+        link.href = buildGameUrl();
         link.className = "game-link";
         link.addEventListener('pointerdown', e => {
             if (e.pointerType === 'touch') {
-                link.href = "run?app=" + game.appId + "&mobile=1";
+                link.href = buildGameUrl(true);
             }
         });
 
