@@ -380,7 +380,7 @@ async function init() {
                 
                 try {
                     // Добавляем таймауты для всех Java вызовов
-                    const processEventWithTimeout = async (eventProcessor, timeoutMs = 100) => {
+                    const processEventWithTimeout = async (eventProcessor, timeoutMs = 1000) => {
                         return Promise.race([
                             eventProcessor(),
                             new Promise((_, reject) => 
@@ -391,23 +391,28 @@ async function init() {
 
                     if (evt.kind == 'keydown') {
                         await processEventWithTimeout(async () => {
-                            await listener.keyPressed(await new KeyEvent(...evt.args));
+                            const keyEvent = await new KeyEvent(...evt.args);
+                            await listener.keyPressed(keyEvent);
                         });
                     } else if (evt.kind == 'keyup') {
                         await processEventWithTimeout(async () => {
-                            await listener.keyReleased(await new KeyEvent(...evt.args));
+                            const keyEvent = await new KeyEvent(...evt.args);
+                            await listener.keyReleased(keyEvent);
                         });
                     } else if (evt.kind == 'pointerpressed') {
                         await processEventWithTimeout(async () => {
-                            await listener.pointerPressed(await new PointerEvent(evt.x, evt.y));
+                            const pointerEvent = await new PointerEvent(evt.x, evt.y);
+                            await listener.pointerPressed(pointerEvent);
                         });
                     } else if (evt.kind == 'pointerdragged') {
                         await processEventWithTimeout(async () => {
-                            await listener.pointerDragged(await new PointerEvent(evt.x, evt.y));
+                            const pointerEvent = await new PointerEvent(evt.x, evt.y);
+                            await listener.pointerDragged(pointerEvent);
                         });
                     } else if (evt.kind == 'pointerreleased') {
                         await processEventWithTimeout(async () => {
-                            await listener.pointerReleased(await new PointerEvent(evt.x, evt.y));
+                            const pointerEvent = await new PointerEvent(evt.x, evt.y);
+                            await listener.pointerReleased(pointerEvent);
                         });
                     } else if (evt.kind == 'player-eom') {
                         await processEventWithTimeout(async () => {
@@ -527,12 +532,24 @@ async function init() {
                     const settingsContent = await settingsBlob.text();
                     console.log("Main: Найдены сохраненные настройки:", settingsContent);
                     
-                    // Парсим настройки из формата "key: value"
+                    // Парсим настройки из формата "key: value" или "key=value"
                     const lines = settingsContent.split('\n');
                     for (const line of lines) {
                         const trimmed = line.trim();
-                        if (trimmed && trimmed.includes(':')) {
-                            const [key, value] = trimmed.split(':').map(s => s.trim());
+                        if (trimmed && !trimmed.startsWith('#')) {
+                            let key, value;
+                            
+                            // Поддерживаем оба формата: key=value и key: value
+                            if (trimmed.includes('=')) {
+                                const equalIndex = trimmed.indexOf('=');
+                                key = trimmed.substring(0, equalIndex).trim();
+                                value = trimmed.substring(equalIndex + 1).trim();
+                            } else if (trimmed.includes(':')) {
+                                const colonIndex = trimmed.indexOf(':');
+                                key = trimmed.substring(0, colonIndex).trim();
+                                value = trimmed.substring(colonIndex + 1).trim();
+                            }
+                            
                             if (key && value) {
                                 // Конвертируем значения в правильные типы
                                 if (value === 'true' || value === 'false') {
@@ -785,12 +802,24 @@ async function init() {
                         const settingsContent = await settingsBlob.text();
                         console.log("Main: Найдены сохраненные настройки:", settingsContent);
                         
-                        // Парсим настройки из формата "key: value"
+                        // Парсим настройки из формата "key: value" или "key=value"
                         const lines = settingsContent.split('\n');
                         for (const line of lines) {
                             const trimmed = line.trim();
-                            if (trimmed && trimmed.includes(':')) {
-                                const [key, value] = trimmed.split(':').map(s => s.trim());
+                            if (trimmed && !trimmed.startsWith('#')) {
+                                let key, value;
+                                
+                                // Поддерживаем оба формата: key=value и key: value
+                                if (trimmed.includes('=')) {
+                                    const equalIndex = trimmed.indexOf('=');
+                                    key = trimmed.substring(0, equalIndex).trim();
+                                    value = trimmed.substring(equalIndex + 1).trim();
+                                } else if (trimmed.includes(':')) {
+                                    const colonIndex = trimmed.indexOf(':');
+                                    key = trimmed.substring(0, colonIndex).trim();
+                                    value = trimmed.substring(colonIndex + 1).trim();
+                                }
+                                
                                 if (key && value) {
                                     // Конвертируем значения в правильные типы
                                     if (value === 'true' || value === 'false') {
