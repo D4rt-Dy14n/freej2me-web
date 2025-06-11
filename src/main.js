@@ -637,7 +637,7 @@ async function init() {
                         const targetDirPath = await Paths.get(finalTargetDir);
                         await Files.createDirectories(targetDirPath);
                         console.log(`Main: Создана финальная директория ${finalTargetDir}`);
-                        
+                    
                         // Копируем из /str/ в /files/
                         const sourcePath = await Paths.get(targetPath);
                         const finalTargetFilePath = await Paths.get(finalTargetPath);

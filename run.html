@@ -28,8 +28,7 @@
     }
 
     #screen-area {
-        background-color: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
+        background: white;
         border-radius: 15px 15px 0 0;
         display: flex;
         align-items: center;
@@ -48,8 +47,8 @@
         image-rendering: pixelated;
         border-radius: 10px;
         box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-        max-width: calc(100% - 40px);
-        max-height: calc(100% - 40px);
+        max-width: calc(100% - 20px);
+        max-height: calc(100% - 20px);
         transition: zoom 0.2s ease;
     }
 
@@ -154,8 +153,8 @@
     }
 
     .virtual-key {
-        background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-        border: 1px solid #dee2e6;
+        background: linear-gradient(135deg, #e9ecef, #d1d5db);
+        border: 1px solid #9ca3af;
         border-radius: 10px;
         padding: 8px;
         font-size: 1.2em;
@@ -176,7 +175,7 @@
     }
 
     .virtual-key:hover {
-        background: linear-gradient(135deg, #e9ecef, #dee2e6);
+        background: linear-gradient(135deg, #d1d5db, #9ca3af);
         transform: translateY(-1px);
     }
 
@@ -231,11 +230,13 @@
         box-shadow: 0 10px 30px rgba(0,0,0,0.2);
         max-width: 300px;
         z-index: 1000;
+        display: none;
         transform: translateX(320px);
         transition: transform 0.3s ease;
     }
 
     #info-panel.visible {
+        display: block;
         transform: translateX(0);
     }
 
@@ -350,10 +351,12 @@
             right: 10px;
             left: 10px;
             max-width: none;
+            display: none;
             transform: translateY(-100%);
         }
 
         #info-panel.visible {
+            display: block;
             transform: translateY(0);
         }
 
@@ -379,6 +382,7 @@
     <button id="info-toggle" title="Показать управление">ℹ️</button>
 
     <div class="control-buttons">
+        <button class="control-btn" id="esc-button" title="Кнопка Esc - меню">🛠️</button>
         <button class="control-btn" id="keyboard-type-toggle" title="Сменить тип клавиатуры">🔄</button>
         <button class="control-btn active" id="keyboard-toggle" title="Показать/скрыть клавиатуру">⌨️</button>
     </div>
@@ -534,6 +538,7 @@
         // Управление клавиатурой и размерами
         const keyboardToggle = document.getElementById('keyboard-toggle');
         const keyboardTypeToggle = document.getElementById('keyboard-type-toggle');
+        const escButton = document.getElementById('esc-button');
         const phoneKeyboard = document.getElementById('phone-keyboard');
         const gameKeyboard = document.getElementById('game-keyboard');
         const virtualKeyboard = document.getElementById('virtual-keyboard');
@@ -695,6 +700,17 @@
         keyboardTypeToggle.addEventListener('click', () => {
             const newType = currentKeyboardType === 'phone' ? 'game' : 'phone';
             switchKeyboard(newType);
+        });
+
+        // Обработчик кнопки Esc
+        escButton.addEventListener('click', () => {
+            // Эмулируем нажатие клавиши Esc
+            if (window.handleVirtualKey) {
+                window.handleVirtualKey(true, 'Escape');
+                setTimeout(() => {
+                    window.handleVirtualKey(false, 'Escape');
+                }, 50);
+            }
         });
 
         // Улучшенная эмуляция нажатий клавиш (DEPRECATED)
