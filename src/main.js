@@ -662,18 +662,58 @@ async function init() {
                 }
             }
             
-            // Создаем корректные настройки
+            // Создаем настройки с учетом переданных параметров
             const correctSettings = await new HashMap();
-            await correctSettings.put("fontSize", "medium");
-            await correctSettings.put("phone", "standard");
-            await correctSettings.put("dgFormat", "4444");
-            await correctSettings.put("width", 240);
-            await correctSettings.put("height", 320);
-            await correctSettings.put("sound", "on");
-            await correctSettings.put("rotate", "off");
-            await correctSettings.put("forceFullscreen", "off");
+            
+            // Настройки по умолчанию
+            const defaults = {
+                phone: "standard",
+                fontSize: "medium", 
+                dgFormat: "4444",
+                width: 240,
+                height: 320,
+                sound: true,
+                rotate: false,
+                forceFullscreen: false,
+                limitFps: 0
+            };
+
+            // Применяем настройки из URL параметров (переданные из index.html)
+            const settings = {};
+            for (const [key, defaultValue] of Object.entries(defaults)) {
+                const urlValue = sp.get(key);
+                if (urlValue !== null) {
+                    // Конвертируем значения в правильный тип
+                    if (typeof defaultValue === 'boolean') {
+                        settings[key] = urlValue === 'true';
+                    } else if (typeof defaultValue === 'number') {
+                        settings[key] = parseInt(urlValue) || defaultValue;
+                    } else {
+                        settings[key] = urlValue;
+                    }
+                } else {
+                    settings[key] = defaultValue;
+                }
+            }
+
+            console.log("Main: Применяем настройки игры:", settings);
+
+            // Устанавливаем настройки в HashMap
+            await correctSettings.put("phone", settings.phone);
+            await correctSettings.put("fontSize", settings.fontSize);
+            await correctSettings.put("dgFormat", settings.dgFormat);
+            await correctSettings.put("width", settings.width);
+            await correctSettings.put("height", settings.height);
+            await correctSettings.put("sound", settings.sound ? "on" : "off");
+            await correctSettings.put("rotate", settings.rotate ? "on" : "off");
+            await correctSettings.put("forceFullscreen", settings.forceFullscreen ? "on" : "off");
             await correctSettings.put("textureDisableFilter", "off");
             await correctSettings.put("queuedPaint", "off");
+            
+            // Устанавливаем лимит FPS если указан
+            if (settings.limitFps > 0) {
+                await correctSettings.put("limitFps", settings.limitFps);
+            }
             
             const emptyAppProps = await new HashMap();
             const emptySysProps = await new HashMap();
