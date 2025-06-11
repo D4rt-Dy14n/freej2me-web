@@ -523,7 +523,9 @@ async function init() {
                 const settingsFilePath = await Paths.get(settingsPath);
                 
                 if (await Files.exists(settingsFilePath)) {
-                    const settingsContent = await Files.readString(settingsFilePath);
+                    const settingsBytes = await Files.readAllBytes(settingsFilePath);
+                    // Конвертируем байты в строку
+                    const settingsContent = new TextDecoder('utf-8').decode(settingsBytes);
                     console.log("Main: Найдены сохраненные настройки:", settingsContent);
                     
                     // Парсим настройки из формата "key: value"
@@ -777,12 +779,14 @@ async function init() {
                     const settingsPath = `/files/${appId}/config/settings.conf`;
                     const settingsFilePath = await Paths.get(settingsPath);
                     
-                    if (await Files.exists(settingsFilePath)) {
-                        const settingsContent = await Files.readString(settingsFilePath);
-                        console.log("Main: Найдены сохраненные настройки:", settingsContent);
-                        
-                        // Парсим настройки из формата "key: value"
-                        const lines = settingsContent.split('\n');
+                                    if (await Files.exists(settingsFilePath)) {
+                    const settingsBytes = await Files.readAllBytes(settingsFilePath);
+                    // Конвертируем байты в строку
+                    const settingsContent = new TextDecoder('utf-8').decode(settingsBytes);
+                    console.log("Main: Найдены сохраненные настройки:", settingsContent);
+                    
+                    // Парсим настройки из формата "key: value"
+                    const lines = settingsContent.split('\n');
                         for (const line of lines) {
                             const trimmed = line.trim();
                             if (trimmed && trimmed.includes(':')) {
