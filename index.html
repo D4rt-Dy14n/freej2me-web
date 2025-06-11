@@ -516,8 +516,8 @@
                         </button>
                         ${game.isUploaded ? `
                             <button class="btn btn-danger" onclick="deleteUploadedGame('${game.filename}')">
-                                ❌ Удалить
-                            </button>
+                            ❌ Удалить
+                        </button>
                         ` : ''}
                     </div>
                 </div>
@@ -554,7 +554,7 @@
                         if (key.includes(filename.replace('.jar', ''))) {
                             localStorage.removeItem(key);
                         }
-                    });
+                     });
                     showNotification('Данные игры очищены из localStorage', 'success');
                 } catch (error) {
                     console.error('Ошибка:', error);
@@ -574,7 +574,7 @@
                     // Очищаем данные игры
                     clearGameData(filename);
                     
-                    showNotification('Игра удалена', 'success');
+                        showNotification('Игра удалена', 'success');
                     loadGamesList(); // Перезагружаем список
                 } catch (error) {
                     console.error('Ошибка:', error);
