@@ -248,11 +248,21 @@ function fillGamesList(games) {
         item.className = "game-item";
 
         const link = document.createElement("a");
-        link.href = "run?app=" + game.appId;
+        
+        // Формируем URL только с appId - настройки берем из конфига
+        const buildGameUrl = (mobile = false) => {
+            let url = `run?app=${game.appId}`;
+            if (mobile) {
+                url += "&mobile=1";
+            }
+            return url;
+        };
+        
+        link.href = buildGameUrl();
         link.className = "game-link";
         link.addEventListener('pointerdown', e => {
             if (e.pointerType === 'touch') {
-                link.href = "run?app=" + game.appId + "&mobile=1";
+                link.href = buildGameUrl(true);
             }
         });
 

@@ -1,11 +1,12 @@
 export const codeMap = {
-    'Enter': 13,
+    'Enter': 53,   // 5 (центральная кнопка навигации)
     'Backspace': 8,
     'Delete': 46,
-    'ArrowLeft': 37,
-    'ArrowRight': 39,
-    'ArrowUp': 38,
-    'ArrowDown': 40,
+    // Стрелки - используем уникальные коды без конфликтов
+    'ArrowLeft': 37,   // Стандартный код VK_LEFT
+    'ArrowRight': 39,  // Стандартный код VK_RIGHT  
+    'ArrowUp': 38,     // Стандартный код VK_UP
+    'ArrowDown': 40,   // Стандартный код VK_DOWN
     'Escape': 27,
     'Digit0': 48,
     'Digit1': 49,
@@ -17,27 +18,16 @@ export const codeMap = {
     'Digit7': 55,
     'Digit8': 56,
     'Digit9': 57,
-    'Numpad0': 96,
-    'Numpad1': 97,
-    'Numpad2': 98,
-    'Numpad3': 99,
-    'Numpad4': 100,
-    'Numpad5': 101,
-    'Numpad6': 102,
-    'Numpad7': 103,
-    'Numpad8': 104,
-    'Numpad9': 105,
-    'NumpadDivide': 111,
-    'NumpadMultiply': 106,
-    'F1': 112,
-    'F2': 113,
+    'KeyQ': 112,           // Левая софт-клавиша (через [)
+    'KeyE': 113,           // Правая софт-клавиша (через ])
+    'NumpadMultiply': 42,  // * (звездочка)
+    'KeyR': 35,            // R -> # (решетка)
     'F3': 114,
     'Space': 32,
     'KeyA': 65,
     'KeyB': 66,
     'KeyC': 67,
     'KeyD': 68,
-    'KeyE': 69,
     'KeyF': 70,
     'KeyG': 71,
     'KeyH': 72,
@@ -50,7 +40,6 @@ export const codeMap = {
     'KeyO': 79,
     'KeyP': 80,
     'KeyQ': 81,
-    'KeyR': 82,
     'KeyS': 83,
     'KeyT': 84,
     'KeyU': 85,
@@ -64,16 +53,19 @@ export const codeMap = {
 
 
 export class KeyRepeatManager {
-    static TIME_TO_FIRST_REPEAT = 500;
-    static REPEAT_INTERVAL = 30;
+    static TIME_TO_FIRST_REPEAT = 300;  // Уменьшено с 500 для быстрого отклика
+    static REPEAT_INTERVAL = 50;        // Увеличено с 30 для более плавных повторов
+    static QUICK_CLICK_THRESHOLD = 150; // Максимальное время для быстрого клика
+    static MULTI_CLICK_WINDOW = 400;    // Окно для определения мульти-кликов
 
     keyStates = new Map();
     listener = null;
+    clickHistory = new Map(); // История кликов для определения паттернов
 
     /**
      * Registers or unregisters a listener callback to receive emitted events.
      * @param {(eventType: string, key: string, args: object) => void | null} callback - The function to call or null to unregister.
-     * - eventType: 'down', 'repeat', 'up', or 'click'.
+     * - eventType: 'down', 'repeat', 'up', 'click', 'quickclick', 'multiclick', or 'hold'.
      * - key: The identifier of the key.
      * - args: The optional arguments associated with the key event.
      */
@@ -98,6 +90,7 @@ export class KeyRepeatManager {
         }
 
         const currentState = this.keyStates.get(key);
+        const now = Date.now();
 
         if (isDown) {
             if (currentState) {
@@ -107,35 +100,93 @@ export class KeyRepeatManager {
             } else {
                 const newState = {
                     args: args || {},
+                    pressTime: now,
                     timeoutToFirstRepeatId: null,
                     repeatIntervalId: null,
+                    isHolding: false,
                 };
                 this.keyStates.set(key, newState);
 
+                // Мгновенно отправляем событие нажатия
                 this.emit('down', key, newState.args);
 
+                // Устанавливаем таймер для определения удержания
                 newState.timeoutToFirstRepeatId = setTimeout(() => {
+                    newState.isHolding = true;
+                    this.emit('hold', key, newState.args);
                     this.emit('repeat', key, newState.args);
+                    
                     newState.repeatIntervalId = setInterval(() => {
                         this.emit('repeat', key, newState.args);
                     }, KeyRepeatManager.REPEAT_INTERVAL);
                 }, KeyRepeatManager.TIME_TO_FIRST_REPEAT);
             }
         } else if (currentState) {
+            const pressDuration = now - currentState.pressTime;
+            
             this.emit('up', key, currentState.args);
 
-            if (currentState.repeatIntervalId === null) {
-                // key released before the first repeat
-                // emit a click event
-
+            // Очищаем таймеры
+            if (currentState.timeoutToFirstRepeatId) {
                 clearTimeout(currentState.timeoutToFirstRepeatId);
-                this.emit('click', key, currentState.args);
-            } else {
+            }
+            if (currentState.repeatIntervalId) {
                 clearInterval(currentState.repeatIntervalId);
+            }
+
+            // Определяем тип клика
+            if (!currentState.isHolding) {
+                if (pressDuration <= KeyRepeatManager.QUICK_CLICK_THRESHOLD) {
+                    // Быстрый клик
+                    this.handleQuickClick(key, currentState.args, now);
+                } else {
+                    // Обычный клик
+                    this.emit('click', key, currentState.args);
+                }
             }
 
             this.keyStates.delete(key);
         }
+    }
+
+    /**
+     * Обрабатывает быстрые клики и мульти-клики
+     * @private
+     */
+    handleQuickClick(key, args, now) {
+        const history = this.clickHistory.get(key) || [];
+        
+        // Удаляем старые клики из истории
+        const recentClicks = history.filter(time => 
+            now - time <= KeyRepeatManager.MULTI_CLICK_WINDOW
+        );
+        
+        recentClicks.push(now);
+        this.clickHistory.set(key, recentClicks);
+
+        // Определяем тип события
+        if (recentClicks.length === 1) {
+            // Первый быстрый клик
+            this.emit('quickclick', key, { ...args, clickCount: 1 });
+            this.emit('click', key, args); // Совместимость
+        } else {
+            // Мульти-клик
+            this.emit('multiclick', key, { ...args, clickCount: recentClicks.length });
+        }
+
+        // Очищаем историю кликов через некоторое время
+        setTimeout(() => {
+            const currentHistory = this.clickHistory.get(key) || [];
+            const filteredHistory = currentHistory.filter(time => 
+                Date.now() - time <= KeyRepeatManager.MULTI_CLICK_WINDOW
+            );
+            
+            if (filteredHistory.length === 0) {
+                this.clickHistory.delete(key);
+            } else {
+                this.clickHistory.set(key, filteredHistory);
+            }
+        }, KeyRepeatManager.MULTI_CLICK_WINDOW + 100);
     }
 
     /**
@@ -158,6 +209,7 @@ export class KeyRepeatManager {
             clearInterval(state.repeatIntervalId);
         }
         this.keyStates.clear();
+        this.clickHistory.clear();
     }
 }
 
@@ -169,7 +221,7 @@ const keyRepeater = new KeyRepeater();
 // Register the listener
 keyRepeater.register((eventType, key, args) => {
     const argsString = Object.keys(args).length > 0 ? JSON.stringify(args) : '';
-    console.log(`EVENT: type=${eventType}, key=${key} ${argsString}`);
+    // console.log(`EVENT: type=${eventType}, key=${key} ${argsString}`);
 });
 
 console.log("Simulating 'Enter' press and hold...");

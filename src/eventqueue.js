@@ -15,7 +15,9 @@ export class EventQueue {
     }
 
     queueEvent(evt, skipIfExists=null) {
-        if (!this.started) return;
+        if (!this.started) {
+            return;
+        }
         if (skipIfExists && this.queue.some(skipIfExists)) {
             return;
         }

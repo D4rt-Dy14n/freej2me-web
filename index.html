@@ -1,125 +1,1002 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎮 FreeJ2ME Web - J2ME Games</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <meta charset="utf-8">
+    <title>FreeJ2ME - Game Manager</title>
+    <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAA==">
+
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        * {
             margin: 0;
-            padding: 20px;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            padding: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-        h1 {
-            text-align: center;
             color: #333;
-            margin-bottom: 30px;
         }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .upload-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        .upload-zone {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .upload-zone:hover {
+            border-color: #764ba2;
+            background: rgba(118, 75, 162, 0.05);
+            transform: translateY(-2px);
+        }
+
+        .upload-zone.dragover {
+            border-color: #764ba2;
+            background: rgba(118, 75, 162, 0.1);
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .upload-text {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .upload-hint {
+            color: #666;
+            font-size: 1rem;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .games-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        .section-title {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 25px;
+            color: #333;
+            text-align: center;
+        }
+
         .games-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
         }
+
         .game-card {
-            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-            border-radius: 10px;
-            padding: 20px;
-            text-align: center;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            border: 1px solid #dee2e6;
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
         }
+
         .game-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+            border-color: #667eea;
         }
+
+        .game-header {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+        }
+
         .game-title {
+            font-size: 1.3rem;
             font-weight: 600;
             color: #333;
-            margin-bottom: 10px;
-            font-size: 1.1em;
+            margin-bottom: 5px;
         }
-        .play-btn {
+
+        .game-info {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .game-actions {
+            padding: 15px 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+        }
+
+        .btn-primary {
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-weight: 500;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-block;
-            transition: all 0.3s ease;
         }
-        .play-btn:hover {
-            transform: scale(1.05);
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
             box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
-        .info {
-            text-align: center;
-            margin-bottom: 30px;
-            padding: 15px;
-            background: rgba(102, 126, 234, 0.1);
-            border-radius: 8px;
+
+        .btn-secondary {
+            background: #f8f9fa;
+            color: #666;
+            border: 1px solid #ddd;
+        }
+
+        .btn-secondary:hover {
+            background: #e9ecef;
             color: #333;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.success {
+            background: #28a745;
+        }
+
+        .notification.error {
+            background: #dc3545;
+        }
+
+        .notification.warning {
+            background: #ffc107;
+            color: #212529;
+        }
+
+
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2.5rem;
+            }
+            
+            .games-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .game-actions {
+                justify-content: center;
+            }
+            
+            .btn {
+                flex: 1;
+                min-width: 120px;
+                justify-content: center;
+            }
+        }
+
+        /* Модальное окно настроек */
+        .settings-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+        }
+
+        .settings-modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .settings-content {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .settings-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .close-btn {
+            background: #f0f0f0;
+            border: none;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            cursor: pointer;
+            font-size: 1.2em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .close-btn:hover {
+            background: #e0e0e0;
+        }
+
+        .settings-form {
+            display: grid;
+            gap: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            color: #555;
+            font-size: 0.9em;
+        }
+
+        .form-group select,
+        .form-group input {
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.2s;
+        }
+
+        .form-group select:focus,
+        .form-group input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+
+        .form-group-inline {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 5px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #007bff;
+        }
+
+        .settings-actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 2px solid #f0f0f0;
+        }
+
+        .settings-actions .btn {
+            flex: 1;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎮 FreeJ2ME Web - J2ME Games</h1>
-        
-        <div class="info">
-            <p><strong>Готово для GitHub Pages!</strong> Каждая игра запускается в отдельном эмуляторе в вашем браузере.</p>
-            <p>Поддержка: клавиатура, сенсорный ввод, виртуальная клавиатура</p>
+        <div class="header">
+            <h1>🎮 FreeJ2ME</h1>
+            <p>Управление Java ME играми в браузере</p>
         </div>
 
-        <div class="games-grid">
-            <div class="game-card">
-                <div class="game-title">Doom II RPG</div>
-                <a href="run.html?jar=doom2rpg.jar" class="play-btn">Играть</a>
+        <div class="upload-section">
+            <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text">Загрузить JAR файл</div>
+                <div class="upload-hint">Нажмите или перетащите .jar файл сюда</div>
+                <input type="file" id="fileInput" class="file-input" accept=".jar" />
             </div>
-            
-            <div class="game-card">
-                <div class="game-title">Doom II RPG (176x208)</div>
-                <a href="run.html?jar=doom2rpg_176x208.jar" class="play-btn">Играть</a>
+            <div class="loading" id="uploadLoading">
+                <div class="spinner"></div>
+                <div>Загрузка файла...</div>
             </div>
-            
-            <div class="game-card">
-                <div class="game-title">Retro Snake</div>
-                <a href="run.html?jar=retrosnake.jar" class="play-btn">Играть</a>
-            </div>
-            
-            <div class="game-card">
-                <div class="game-title">Retro Snake (240x320)</div>
-                <a href="run.html?jar=retrosnake_240x320.jar" class="play-btn">Играть</a>
-            </div>
-            
-            <div class="game-card">
-                <div class="game-title">Nokia Snake</div>
-                <a href="run.html?jar=nokia_snake.jar" class="play-btn">Играть</a>
-            </div>
-            
-            <div class="game-card">
-                <div class="game-title">Snake</div>
-                <a href="run.html?jar=snake.jar" class="play-btn">Играть</a>
-            </div>
-            
-            <div class="game-card">
-                <div class="game-title">📂 Менеджер игр</div>
-                <a href="index.html" class="play-btn">Открыть</a>
+        </div>
+
+        <div class="games-section">
+            <h2 class="section-title">Установленные игры</h2>
+            <div class="games-grid" id="gamesList">
+                <div class="empty-state">
+                    <div class="empty-icon">🎯</div>
+                    <h3>Нет игр</h3>
+                    <p>Загрузите JAR файлы для начала</p>
+                </div>
             </div>
         </div>
     </div>
+
+    <!-- Модальное окно настроек игры -->
+    <div class="settings-modal" id="settingsModal">
+        <div class="settings-content">
+            <div class="settings-header">
+                <div class="settings-title" id="settingsTitle">Настройки игры</div>
+                <button class="close-btn" onclick="closeGameSettings()">×</button>
+            </div>
+            
+            <div class="settings-form">
+                <!-- Размер экрана -->
+                <div class="form-group">
+                    <label for="screenSize">Размер экрана:</label>
+                    <select id="screenSize">
+                        <option value="96x65">96x65</option>
+                        <option value="96x96">96x96</option>
+                        <option value="104x80">104x80</option>
+                        <option value="128x128">128x128</option>
+                        <option value="132x176">132x176</option>
+                        <option value="128x160">128x160</option>
+                        <option value="176x208">176x208</option>
+                        <option value="176x220">176x220</option>
+                        <option value="208x208">208x208</option>
+                        <option value="240x320" selected>240x320</option>
+                        <option value="320x240">320x240</option>
+                        <option value="240x400">240x400</option>
+                        <option value="352x416">352x416</option>
+                        <option value="360x640">360x640</option>
+                        <option value="640x360">640x360</option>
+                        <option value="480x800">480x800</option>
+                        <option value="800x480">800x480</option>
+                        <option value="custom">Пользовательский</option>
+                    </select>
+                </div>
+
+                <!-- Пользовательские размеры -->
+                <div class="form-group-inline" id="customSizeGroup" style="display: none;">
+                    <div class="form-group">
+                        <label for="customWidth">Ширина:</label>
+                        <input type="number" id="customWidth" min="64" max="800" value="240">
+                    </div>
+                    <div class="form-group">
+                        <label for="customHeight">Высота:</label>
+                        <input type="number" id="customHeight" min="64" max="800" value="320">
+                    </div>
+                </div>
+
+                <!-- Тип телефона -->
+                <div class="form-group">
+                    <label for="phoneType">Тип телефона:</label>
+                    <select id="phoneType">
+                        <option value="Standard" selected>Standard</option>
+                        <option value="Nokia">Nokia</option>
+                        <option value="Motorola">Motorola</option>
+                        <option value="Siemens">Siemens</option>
+                        <option value="SonyEricsson">SonyEricsson</option>
+                    </select>
+                </div>
+
+                <!-- DirectGraphics формат -->
+                <div class="form-group">
+                    <label for="dgFormat">Формат DirectGraphics:</label>
+                    <select id="dgFormat">
+                        <option value="444">444 RGB (12-bit)</option>
+                        <option value="4444" selected>4444 ARGB (16-bit, рекомендуется)</option>
+                        <option value="565">565 RGB (16-bit)</option>
+                        <option value="888">888 RGB (24-bit)</option>
+                        <option value="8888">8888 RGB (32-bit)</option>
+                    </select>
+                </div>
+
+                <!-- Размер шрифта -->
+                <div class="form-group">
+                    <label for="fontSize">Размер шрифта:</label>
+                    <select id="fontSize">
+                        <option value="0">Динамический</option>
+                        <option value="1">Маленький</option>
+                        <option value="2" selected>Средний</option>
+                        <option value="3">Большой</option>
+                    </select>
+                </div>
+
+                <!-- Ограничение FPS -->
+                <div class="form-group">
+                    <label for="limitFps">Ограничение FPS (0 = без ограничений):</label>
+                    <input type="number" id="limitFps" min="0" max="120" value="0">
+                </div>
+
+                <!-- Переключатели -->
+                <div class="form-group">
+                    <label>Дополнительные настройки:</label>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="enableSound" checked>
+                        <label for="enableSound">Звук</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="rotateScreen">
+                        <label for="rotateScreen">Поворот экрана</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="forceFullscreen">
+                        <label for="forceFullscreen">Принудительный полноэкранный режим</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-actions">
+                <button class="btn btn-secondary" onclick="resetToDefaults()">По умолчанию</button>
+                <button class="btn btn-primary" onclick="saveGameSettings()">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentGameProcess = null;
+
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            setupDragAndDrop();
+            setupFileInput();
+            loadGamesList();
+        });
+
+        // Настройка drag & drop
+        function setupDragAndDrop() {
+            const uploadZone = document.querySelector('.upload-zone');
+            
+            uploadZone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadZone.classList.add('dragover');
+            });
+            
+            uploadZone.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                uploadZone.classList.remove('dragover');
+            });
+            
+            uploadZone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadZone.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].name.endsWith('.jar')) {
+                    uploadGame(files[0]);
+                } else {
+                    showNotification('Пожалуйста, выберите JAR файл', 'error');
+                }
+            });
+        }
+
+        // Настройка file input
+        function setupFileInput() {
+            document.getElementById('fileInput').addEventListener('change', function(e) {
+                if (e.target.files.length > 0) {
+                    uploadGame(e.target.files[0]);
+                }
+            });
+        }
+
+        // Загрузка игры на сервер (для GitHub Pages - используем localStorage)
+        async function uploadGame(file) {
+            const loading = document.getElementById('uploadLoading');
+            loading.style.display = 'block';
+            
+            try {
+                // Проверяем размер файла (максимум 5MB для веб-браузера)
+                if (file.size > 5 * 1024 * 1024) {
+                    throw new Error('Файл слишком большой (максимум 5MB)');
+                }
+                
+                // Проверяем расширение файла
+                if (!file.name.toLowerCase().endsWith('.jar')) {
+                    throw new Error('Поддерживаются только JAR файлы');
+                }
+                
+                // Читаем файл как ArrayBuffer
+                const arrayBuffer = await readFileAsArrayBuffer(file);
+                
+                // Сохраняем в localStorage для последующего использования
+                const fileName = file.name;
+                const base64 = arrayBufferToBase64(arrayBuffer);
+                
+                // Сохраняем метаданные
+                const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                const gameData = {
+                    name: fileName.replace('.jar', ''),
+                    filename: fileName,
+                    size: formatFileSize(file.size),
+                    data: base64,
+                    uploadDate: new Date().toISOString(),
+                    isUploaded: true
+                };
+                
+                // Проверяем, не загружена ли уже эта игра
+                const existingIndex = uploadedGames.findIndex(g => g.filename === fileName);
+                if (existingIndex >= 0) {
+                    uploadedGames[existingIndex] = gameData;
+                    showNotification('Игра обновлена!', 'success');
+                } else {
+                    uploadedGames.push(gameData);
+                    showNotification('Игра успешно загружена!', 'success');
+                }
+                
+                localStorage.setItem('uploadedGames', JSON.stringify(uploadedGames));
+                loadGamesList(); // Перезагружаем список игр
+                document.getElementById('fileInput').value = ''; // Очищаем input
+                
+            } catch (error) {
+                console.error('Ошибка:', error);
+                showNotification('Ошибка загрузки файла: ' + error.message, 'error');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        // Вспомогательные функции для работы с файлами
+        function readFileAsArrayBuffer(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsArrayBuffer(file);
+            });
+        }
+        
+        function arrayBufferToBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+        
+        function base64ToArrayBuffer(base64) {
+            const binary = atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        // Загрузка списка игр
+        async function loadGamesList() {
+            try {
+                // Загружаем предустановленные игры
+                let preinstalledGames = [];
+                try {
+                    const response = await fetch('./games/games.json');
+                    preinstalledGames = await response.json();
+                } catch (error) {
+                    console.warn('Не удалось загрузить предустановленные игры:', error);
+                }
+                
+                // Загружаем пользовательские игры из localStorage
+                const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                
+                // Объединяем списки
+                const allGames = [...preinstalledGames, ...uploadedGames];
+                
+                displayGamesList(allGames);
+            } catch (error) {
+                console.error('Ошибка загрузки списка игр:', error);
+                displayGamesList([]);
+            }
+        }
+
+        // Отображение списка игр
+        function displayGamesList(games) {
+            const gamesList = document.getElementById('gamesList');
+            
+            if (games.length === 0) {
+                gamesList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🎯</div>
+                        <h3>Нет игр</h3>
+                        <p>Загрузите JAR файлы для начала</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            gamesList.innerHTML = games.map(game => `
+                <div class="game-card">
+                    <div class="game-header">
+                        <div class="game-title">${game.name} ${game.isUploaded ? '(Загружена)' : ''}</div>
+                        <div class="game-info">Размер: ${game.size}</div>
+                        ${game.uploadDate ? `<div class="game-info">Загружена: ${new Date(game.uploadDate).toLocaleDateString()}</div>` : ''}
+                    </div>
+                    <div class="game-actions">
+                        <button class="btn btn-primary" onclick="runGame('${game.filename}', ${game.isUploaded || false})">
+                            ▶️ Запустить
+                        </button>
+                        <button class="btn btn-secondary" onclick="openGameSettings('${game.filename}', '${game.name}', ${game.isUploaded || false})">
+                            ⚙️ Настройки
+                        </button>
+                        <button class="btn btn-secondary" onclick="clearGameData('${game.filename}')">
+                            🗑️ Очистить данные
+                        </button>
+                        ${game.isUploaded ? `
+                            <button class="btn btn-danger" onclick="deleteUploadedGame('${game.filename}')">
+                            ❌ Удалить
+                        </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Запуск игры
+        async function runGame(filename, isUploaded = false) {
+            try {
+                // Запускаем только с jar параметром - все настройки берутся из конфига
+                // Убираем uploaded=true из URL так как это не нужно
+                const runUrl = `./run.html?jar=${encodeURIComponent(filename)}`;
+                console.log('Запуск игры с минимальными параметрами:', runUrl);
+                window.location.href = runUrl;
+            } catch (error) {
+                console.error('Ошибка запуска игры:', error);
+                showNotification('Ошибка запуска игры', 'error');
+            }
+        }
+
+        // Закрытие игры (убираем, так как теперь используем run.html)
+        function closeGame() {
+            // Эта функция больше не нужна, так как игры запускаются в run.html
+        }
+
+        // Очистка данных игры
+        async function clearGameData(filename) {
+            if (confirm('Очистить все данные игры? Это действие нельзя отменить.')) {
+                try {
+                    // Очищаем localStorage для игры
+                    const keys = Object.keys(localStorage);
+                    keys.forEach(key => {
+                        if (key.includes(filename.replace('.jar', ''))) {
+                            localStorage.removeItem(key);
+                        }
+                     });
+                    showNotification('Данные игры очищены из localStorage', 'success');
+                } catch (error) {
+                    console.error('Ошибка:', error);
+                    showNotification('Ошибка очистки данных', 'error');
+                }
+            }
+        }
+
+        // Удаление загруженной игры
+        async function deleteUploadedGame(filename) {
+            if (confirm('Удалить игру? Это действие нельзя отменить.')) {
+                try {
+                    const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                    const filteredGames = uploadedGames.filter(game => game.filename !== filename);
+                    localStorage.setItem('uploadedGames', JSON.stringify(filteredGames));
+                    
+                    // Очищаем данные игры
+                    clearGameData(filename);
+                    
+                        showNotification('Игра удалена', 'success');
+                    loadGamesList(); // Перезагружаем список
+                } catch (error) {
+                    console.error('Ошибка:', error);
+                    showNotification('Ошибка удаления игры', 'error');
+                }
+            }
+        }
+
+        // Показ уведомлений
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            // Показываем уведомление
+            setTimeout(() => notification.classList.add('show'), 100);
+            
+            // Убираем уведомление через 3 секунды
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => document.body.removeChild(notification), 300);
+            }, 3000);
+        }
+
+        // === НАСТРОЙКИ ИГР ===
+        let currentGameSettings = null;
+
+        // Настройки по умолчанию
+        const defaultGameSettings = {
+            width: 240,
+            height: 320,
+            phone: 'Standard',  // Исправлено в соответствии с оригиналом
+            dgFormat: '4444',
+            fontSize: 2,  // 2 = Medium (числовое значение как в оригинале)
+            limitFps: 0,
+            sound: true,
+            rotate: false,
+            forceFullscreen: false
+        };
+
+        // Открытие настроек игры
+        function openGameSettings(filename, gameName, isUploaded) {
+            currentGameSettings = {
+                filename: filename,
+                gameName: gameName,
+                isUploaded: isUploaded,
+                settings: { ...defaultGameSettings }
+            };
+
+            // Загружаем сохраненные настройки
+            const savedSettings = localStorage.getItem(`gameSettings_${filename}`);
+            if (savedSettings) {
+                try {
+                    currentGameSettings.settings = { ...defaultGameSettings, ...JSON.parse(savedSettings) };
+                } catch (e) {
+                    console.warn('Ошибка загрузки настроек игры:', e);
+                }
+            }
+
+            // Устанавливаем заголовок
+            document.getElementById('settingsTitle').textContent = `Настройки: ${gameName}`;
+
+            // Заполняем форму
+            populateSettingsForm(currentGameSettings.settings);
+
+            // Показываем модальное окно
+            document.getElementById('settingsModal').classList.add('show');
+        }
+
+        // Заполнение формы настроек
+        function populateSettingsForm(settings) {
+            // Размер экрана
+            const screenSize = `${settings.width}x${settings.height}`;
+            const screenSizeSelect = document.getElementById('screenSize');
+            const standardSizes = ['96x65', '96x96', '104x80', '128x128', '132x176', '128x160', '176x208', '176x220', '208x208', '240x320', '320x240', '240x400', '352x416', '360x640', '640x360', '480x800', '800x480'];
+            
+            if (standardSizes.includes(screenSize)) {
+                screenSizeSelect.value = screenSize;
+            } else {
+                screenSizeSelect.value = 'custom';
+                document.getElementById('customSizeGroup').style.display = 'grid';
+            }
+            
+            document.getElementById('customWidth').value = settings.width;
+            document.getElementById('customHeight').value = settings.height;
+
+            // Остальные настройки
+            document.getElementById('phoneType').value = settings.phone;
+            document.getElementById('dgFormat').value = settings.dgFormat;
+            document.getElementById('fontSize').value = settings.fontSize;
+            document.getElementById('limitFps').value = settings.limitFps;
+            document.getElementById('enableSound').checked = settings.sound;
+            document.getElementById('rotateScreen').checked = settings.rotate;
+            document.getElementById('forceFullscreen').checked = settings.forceFullscreen;
+
+            // Обработчик изменения размера экрана
+            screenSizeSelect.onchange = function() {
+                const customGroup = document.getElementById('customSizeGroup');
+                if (this.value === 'custom') {
+                    customGroup.style.display = 'grid';
+                } else {
+                    customGroup.style.display = 'none';
+                    const [width, height] = this.value.split('x').map(Number);
+                    document.getElementById('customWidth').value = width;
+                    document.getElementById('customHeight').value = height;
+                }
+            };
+        }
+
+        // Сохранение настроек игры
+        async function saveGameSettings() {
+            if (!currentGameSettings) return;
+
+            // Собираем настройки из формы
+            const screenSize = document.getElementById('screenSize').value;
+            let width, height;
+            
+            if (screenSize === 'custom') {
+                width = parseInt(document.getElementById('customWidth').value);
+                height = parseInt(document.getElementById('customHeight').value);
+            } else {
+                [width, height] = screenSize.split('x').map(Number);
+            }
+
+            const settings = {
+                width: width,
+                height: height,
+                phone: document.getElementById('phoneType').value,
+                dgFormat: document.getElementById('dgFormat').value,
+                fontSize: parseInt(document.getElementById('fontSize').value), // Преобразуем в число
+                limitFps: parseInt(document.getElementById('limitFps').value),
+                sound: document.getElementById('enableSound').checked,
+                rotate: document.getElementById('rotateScreen').checked,
+                forceFullscreen: document.getElementById('forceFullscreen').checked
+            };
+
+            // Сохраняем в localStorage для следующих запусков
+            localStorage.setItem(`gameSettings_${currentGameSettings.filename}`, JSON.stringify(settings));
+
+            // Применяем настройки к запущенной игре (если есть)
+            if (window.parent && window.parent.applyGameSettings) {
+                try {
+                    await window.parent.applyGameSettings(currentGameSettings.filename.replace('.jar', ''), settings);
+                    showNotification('Настройки сохранены и применены к игре!', 'success');
+                } catch (error) {
+                    console.warn('Не удалось применить настройки к запущенной игре:', error);
+                    showNotification('Настройки сохранены (применятся при следующем запуске)', 'success');
+                }
+            } else {
+                showNotification('Настройки сохранены (применятся при следующем запуске)', 'success');
+            }
+
+            closeGameSettings();
+        }
+
+        // Сброс к настройкам по умолчанию
+        function resetToDefaults() {
+            if (confirm('Сбросить все настройки к значениям по умолчанию?')) {
+                populateSettingsForm(defaultGameSettings);
+                showNotification('Настройки сброшены к значениям по умолчанию', 'success');
+            }
+        }
+
+        // Закрытие модального окна настроек
+        function closeGameSettings() {
+            document.getElementById('settingsModal').classList.remove('show');
+            currentGameSettings = null;
+        }
+
+        // Закрытие по клику вне модального окна
+        document.getElementById('settingsModal').onclick = function(e) {
+            if (e.target === this) {
+                closeGameSettings();
+            }
+        };
+
+        // Функция runGame уже определена выше и не должна добавлять параметры в URL
+        // Все настройки берутся из конфиг файлов в main.js
+    </script>
+    
+    <script src="https://cjrtnc.leaningtech.com/4.1/loader.js" onerror="document.getElementById('loading') && (document.getElementById('loading').textContent = 'Ошибка загрузки CheerpJ. Проверьте соединение с интернетом.')"></script>
+    <script type="module" src="src/main.js"></script>
 </body>
 </html> 

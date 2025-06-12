@@ -2,8 +2,9 @@ import { transcode } from "./transcode/transcode.js"
 
 
 export class LibMedia {
-    constructor() {
-
+    constructor(context, destination=null) {
+        this.context = context;
+        this.destination = destination || context.destination;
     }
 
     async init() {
@@ -16,7 +17,7 @@ export class LibMedia {
     }
 
     createMediaPlayer() {
-        return new MediaPlayer();
+        return new MediaPlayer(this.context, this.destination);
     }
 
 }
@@ -71,94 +72,121 @@ const mp3Types = [
 ];
 
 export class MediaPlayer extends EventTarget {
-    static snapshotCtx = null;
-    static _finalizer = new FinalizationRegistry(objectUrl => {
-        console.warn('closing mediaplayer via finalizer');
-        URL.revokeObjectURL(objectUrl);
-    });
+    static playerCount = 0;
 
-    constructor() {
+    constructor(audioContext, destination = null) {
         super();
 
-        // Create a MediaSource and a hidden video element.
+        MediaPlayer.playerCount++;
+        this.playerId = MediaPlayer.playerCount;
 
-        this.mediaElement = document.createElement("video");
-        this.mediaElement.controls = true;
-        // Hide video element by default (only audio will be played).
-        this.mediaElement.style.display = "none";
+        this.audioContext = audioContext;
+        this.destination = destination || audioContext.destination;
 
-        // Listen for media ending to dispatch an event.
-        this.mediaElement.addEventListener("playing", () => {
-            this.maybeSetupFrameDisplay();
+        this.mediaElement = null;
+        this.objectUrl = null;
+        this.gainNode = null;
+        this.sourceNode = null;
+
+        this.audioContext.resume();
+
+        this.addEventListener('playing', () => {
+            this.state = 'STARTED';
         });
 
-        this.mediaElement.addEventListener("waiting", () => {
-            this.stopFrameDisplay();
-        });
-        this.mediaElement.addEventListener("pause", () => {
-            this.stopFrameDisplay();
+        this.addEventListener('waiting', () => {
+            this.state = 'PREFETCHED';
         });
 
-
-        // Listen for media ending to dispatch an event.
-        this.mediaElement.addEventListener("ended", () => {
-            this.stopFrameDisplay();
-            this.dispatchEvent(new Event("end-of-media"));
+        this.addEventListener('pause', () => {
+            this.state = 'PREFETCHED';
         });
 
+        this.addEventListener('ended', () => {
+            this.state = 'PREFETCHED';
+            this.dispatchEvent(new Event('end-of-media'));
+        });
 
-        // Video drawing configuration (for canvas)
-        this.videoCtx = null;
-        this.videoX = 0; this.videoY = 0;
-        this.videoW = 0; this.videoH = 0;
-        this.videoFullscreen = false;
-        this.videoAnimationFrame = null; // lateron should use request video frame callback
-        // not widely available yet
-        this.onVideoFramePainter = null;
+        this.addEventListener('loadeddata', () => {
+            this.state = 'PREFETCHED';
+        });
 
-        // tests show that we don't need to attach this element to the body
-        // that's good, otherwise we'd need a finalizer [for this object]
-        // that detaches it
+        this.addEventListener('error', (e) => {
+            this.state = 'CLOSED';
+        });
+
+        this.state = 'UNREALIZED';
     }
 
-    // this returns a boolean, doesn't throw
-    async load(buffer, contentType = null) {
-        let blob = null;
-        let ti = buffer.byteLength;
+    async load(contentType, buffer) {
+        if (!buffer || buffer.byteLength === 0) {
+            return false;
+        }
 
-        if (mp3Types.includes(contentType)) {
-            blob = new Blob([buffer], { type: "audio/mp3" });
-        } else {
-            const transcoded = await transcode(buffer);
-            if (transcoded) {
-                blob = new Blob([transcoded], { type: "video/mp4" });
+        if (contentType.includes("mp3") || contentType.includes("audio/mpeg")) {
+            // Обработка MP3 файлов
+            try {
+                if (window.libmedia.transcode) {
+                    const transcoded = await window.libmedia.transcode(buffer);
+                    buffer = transcoded;
+                }
+            } catch (e) {
+                return false;
             }
         }
 
-        if (blob) {
-            const mediaElement = this.mediaElement;
-            const promise =  new Promise(resolve => {
-                const hander = e => {
-                    mediaElement.removeEventListener('loadedmetadata', hander);
-                    mediaElement.removeEventListener('error', hander);
+        // Создаём blob и настраиваем медиа элемент
+        this.blob = new Blob([buffer], { type: contentType });
+        
+        return new Promise((resolve) => {
+            const handleEvent = (e) => {
+                if (e.type === 'loadeddata' || e.type === 'canplaythrough') {
+                    this.mediaElement.removeEventListener('loadeddata', handleEvent);
+                    this.mediaElement.removeEventListener('canplaythrough', handleEvent);
+                    this.mediaElement.removeEventListener('error', handleEvent);
+                    resolve(true);
+                } else if (e.type === 'error') {
+                    this.mediaElement.removeEventListener('loadeddata', handleEvent);
+                    this.mediaElement.removeEventListener('canplaythrough', handleEvent);
+                    this.mediaElement.removeEventListener('error', handleEvent);
+                    resolve(false);
+                }
+            };
 
-                    resolve(e.type === 'loadedmetadata');
-                };
+            this.mediaElement = document.createElement(contentType.startsWith('video/') ? 'video' : 'audio');
+            this.mediaElement.addEventListener('loadeddata', handleEvent);
+            this.mediaElement.addEventListener('canplaythrough', handleEvent);
+            this.mediaElement.addEventListener('error', handleEvent);
 
-                mediaElement.addEventListener('loadedmetadata', hander);
-                mediaElement.addEventListener('error', hander);
+            // Копируем все события на себя для совместимости
+            ['playing', 'waiting', 'pause', 'ended', 'loadeddata', 'error'].forEach(eventType => {
+                this.mediaElement.addEventListener(eventType, (e) => {
+                    this.dispatchEvent(new Event(e.type));
+                });
             });
 
-            this.objectUrl = URL.createObjectURL(blob);
-            this.constructor._finalizer.register(this, this.objectUrl, this);
+            this.objectUrl = URL.createObjectURL(this.blob);
             this.mediaElement.src = this.objectUrl;
+            this.mediaElement.load();
+        }).then(result => {
+            if (!result) {
+                return false;
+            }
 
-            return await promise;
-        } else {
-            return false;
-        }
+            // Настраиваем audio context если нужно
+            if (this.audioContext && this.audioContext.state !== 'closed') {
+                this.gainNode = this.audioContext.createGain();
+                this.gainNode.gain.value = 1.0;
+                this.gainNode.connect(this.destination);
+
+                this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
+                this.sourceNode.connect(this.gainNode);
+            }
+
+            this.state = 'REALIZED';
+            return result;
+        });
     }
-
 
     maybeSetupFrameDisplay() {
         const isPlaying = !this.mediaElement.paused && this.mediaElement.readyState > 2;
@@ -214,30 +242,49 @@ export class MediaPlayer extends EventTarget {
     }
 
     async play() {
-        try {
-            await this.mediaElement.play();
-        } catch(e) {
-            if (e.name == 'NotAllowedError') {
-                console.log('playing muted');
-                this.mediaElement.muted = true;
-                unlockMediaElement(this.mediaElement);
-
-                // might be.. interrupted
-                try {
-                    await this.mediaElement.play();
-                } catch (e) {}
-            }
+        if (!this.mediaElement) {
+            return;
         }
 
+        const elementInfo = this.mediaElement.src?.substring(0, 50) + '...';
+
+        if (!this.mediaElement.paused) {
+            // Звук уже играет, перезапускаем
+            this.mediaElement.currentTime = 0;
+        }
+
+        try {
+            await this.mediaElement.play();
+        } catch (e) {
+            if (e.name === 'NotAllowedError') {
+                // Пробуем проиграть без звука
+                const originalVolume = this.mediaElement.volume;
+                this.mediaElement.volume = 0;
+                this.mediaElement.muted = true;
+
+                try {
+                    await this.mediaElement.play();
+                } catch (e) {
+                    // Даже без звука не получилось
+                }
+
+                this.mediaElement.volume = originalVolume;
+                this.mediaElement.muted = false;
+            }
+        }
     }
 
     pause() {
-        this.mediaElement.pause();
+        if (this.mediaElement) {
+            this.mediaElement.pause();
+        }
     }
 
     stop() {
-        this.pause();
-        this.mediaElement.currentTime = 0;
+        if (this.mediaElement) {
+            this.mediaElement.pause();
+            this.mediaElement.currentTime = 0;
+        }
     }
 
     get volume() {
@@ -290,10 +337,31 @@ export class MediaPlayer extends EventTarget {
     }
 
     close() {
+        if (this.mediaElement) {
+            this.mediaElement.pause();
+            this.mediaElement.src = '';
+            this.mediaElement.load();
+            this.mediaElement = null;
+        }
+
         if (this.objectUrl) {
             URL.revokeObjectURL(this.objectUrl);
+            this.objectUrl = null;
         }
-        this.constructor._finalizer.unregister(this);
+
+        if (this.sourceNode) {
+            this.sourceNode.disconnect();
+            this.sourceNode = null;
+        }
+
+        if (this.gainNode) {
+            this.gainNode.disconnect();
+            this.gainNode = null;
+        }
+
+        this.blob = null;
+        this.state = 'CLOSED';
+        MediaPlayer.playerCount--;
     }
 
     async getSnapshot(type) {
