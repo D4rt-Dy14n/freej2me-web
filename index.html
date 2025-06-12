@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title>FreeJ2ME - Game Manager</title>
-    <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAA==">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
 
     <style>
         * {
@@ -416,7 +416,8 @@
         }
     </style>
 </head>
-<body>
+  <body>
+    <div id="loading" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 18px; font-weight: bold;">Загрузка CheerpJ...</div>
     <div class="container">
         <div class="header">
             <h1>🎮 FreeJ2ME</h1>
@@ -996,7 +997,28 @@
         // Все настройки берутся из конфиг файлов в main.js
     </script>
     
-    <script src="https://cjrtnc.leaningtech.com/4.1/loader.js" onerror="document.getElementById('loading') && (document.getElementById('loading').textContent = 'Ошибка загрузки CheerpJ. Проверьте соединение с интернетом.')"></script>
-    <script type="module" src="src/main.js"></script>
+    <script type="module">
+        import { loadCheerpJ, diagnoseEnvironment } from './src/cheerpj-loader.js';
+        
+        // Запускаем диагностику сразу
+        diagnoseEnvironment();
+        
+        // Пытаемся загрузить CheerpJ
+        loadCheerpJ().then(success => {
+            if (success) {
+                console.log("✅ CheerpJ готов, загружаем main.js");
+                import('./src/main.js');
+            } else {
+                console.error("❌ CheerpJ недоступен, отображаем сообщение об ошибке");
+                const loading = document.getElementById('loading');
+                if (loading) {
+                    loading.textContent = 'CheerpJ недоступен. Проверьте соединение с интернетом, отключите блокировщики рекламы и попробуйте обновить страницу.';
+                    loading.style.color = 'red';
+                    loading.style.fontSize = '16px';
+                    loading.style.fontWeight = 'bold';
+                }
+            }
+        });
+    </script>
 </body>
 </html> 
