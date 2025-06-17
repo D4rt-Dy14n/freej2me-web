@@ -349,6 +349,7 @@ async function init() {
         
         console.log('✅ CheerpJ найден и готов к использованию');
 
+        console.log('🔧 Начинаем инициализацию CheerpJ...');
         await cheerpjInit({
         enableDebug: false,
         natives: {
@@ -455,33 +456,46 @@ async function init() {
         }
     });
 
-    document.getElementById("loading").textContent = "Loading...";
+    console.log('✅ CheerpJ инициализирован успешно');
 
+    document.getElementById("loading").textContent = "Loading Java library...";
+
+    console.log('📚 Загружаем JAR библиотеку:', cheerpjWebRoot+"/freej2me-web.jar");
     const lib = await cheerpjRunLibrary(cheerpjWebRoot+"/freej2me-web.jar");
+    console.log('✅ JAR библиотека загружена:', lib);
     
     // Устанавливаем emulator для bridge callbacks
     window.emulator = lib;
 
     console.log("CheerpJ runtime ready");
 
+    console.log('🎮 Получаем класс FreeJ2ME...');
     const FreeJ2ME = await lib.org.recompile.freej2me.FreeJ2ME;
+    console.log('✅ Класс FreeJ2ME получен:', FreeJ2ME);
 
     let args;
+
+    console.log('📋 Анализируем URL параметры...');
+    console.log('🔍 sp.get("app"):', sp.get('app'));
+    console.log('🔍 sp.get("jar"):', sp.get('jar'));
 
     if (sp.get('app')) {
         const appId = sp.get('app');
         console.log(`Main: Запуск приложения ${appId} в app режиме`);
         
         // Загружаем настройки только из файла конфига
+        console.log('⚙️ Загружаем настройки из конфига...');
         await loadSettingsFromConfig(appId, lib);
         
         args = ['app', appId];
+        console.log('✅ Аргументы установлены для app режима:', args);
     } else {
         // Используем LauncherUtil для инициализации JAR как приложения
         const jarName = sp.get('jar') || "game.jar";
         const appId = jarName.replace('.jar', '');
         
         console.log(`Main: Инициализируем JAR ${jarName} как app ${appId} через LauncherUtil...`);
+        console.log('🔄 Переходим в JAR режим инициализации...');
         
         try {
             const LauncherUtil = await lib.pl.zb3.freej2me.launcher.LauncherUtil;
@@ -651,6 +665,7 @@ async function init() {
     console.log("Main: Запускаем FreeJ2ME с аргументами:", args);
     
     try {
+        console.log('🚀 Вызываем FreeJ2ME.main()...');
         await FreeJ2ME.main(args);
         console.log("Main: FreeJ2ME запущен успешно");
     } catch (e) {
