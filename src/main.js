@@ -341,10 +341,13 @@ async function init() {
             window.libmidi.midiPlayer.addEventListener('end-of-media', midiEOMHandler);
         }
 
-        // Проверяем что CheerpJ загружен
+        // CheerpJ загружается локально в HTML, проверяем что он доступен
         if (typeof cheerpjInit === 'undefined') {
-            throw new Error('CheerpJ не загружен. Проверьте соединение с интернетом и попробуйте обновить страницу.');
+            console.error('❌ CheerpJ недоступен, несмотря на локальную загрузку');
+            throw new Error('CheerpJ не найден. Возможно, проблема с загрузкой локальных файлов.');
         }
+        
+        console.log('✅ CheerpJ найден и готов к использованию');
 
         await cheerpjInit({
         enableDebug: false,

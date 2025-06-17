@@ -997,26 +997,51 @@
         // Все настройки берутся из конфиг файлов в main.js
     </script>
     
+    <script src="./lib/cheerpj/loader.js" onload="console.log('📥 loader.js загружен');" onerror="console.error('❌ Ошибка загрузки loader.js');"></script>
     <script type="module">
-        import { loadCheerpJ, diagnoseEnvironment } from './src/cheerpj-loader.js';
+        console.log("🚀 Загружаем CheerpJ локально...");
         
-        // Запускаем диагностику сразу
-        diagnoseEnvironment();
+        // Простая диагностика браузера
+        const isChrome = navigator.userAgent.includes('Chrome');
+        const isSafari = navigator.userAgent.includes('Safari') && !navigator.userAgent.includes('Chrome');
+        console.log(`🔍 Браузер: ${isChrome ? 'Chrome' : (isSafari ? 'Safari' : 'Other')}`);
         
-        // Пытаемся загрузить CheerpJ
-        loadCheerpJ().then(success => {
-            if (success) {
-                console.log("✅ CheerpJ готов, загружаем main.js");
-                import('./src/main.js');
-            } else {
-                console.error("❌ CheerpJ недоступен, отображаем сообщение об ошибке");
-                const loading = document.getElementById('loading');
-                if (loading) {
-                    loading.textContent = 'CheerpJ недоступен. Проверьте соединение с интернетом, отключите блокировщики рекламы и попробуйте обновить страницу.';
-                    loading.style.color = 'red';
-                    loading.style.fontSize = '16px';
-                    loading.style.fontWeight = 'bold';
+        // Функция ожидания CheerpJ
+        function waitForCheerpJ(maxWait = 5000) {
+            return new Promise((resolve, reject) => {
+                const startTime = Date.now();
+                
+                function check() {
+                    if (typeof window.cheerpjInit !== 'undefined') {
+                        console.log("✅ CheerpJ загружен и готов");
+                        resolve(true);
+                        return;
+                    }
+                    
+                    if (Date.now() - startTime > maxWait) {
+                        console.error("❌ Таймаут ожидания CheerpJ");
+                        reject(new Error('CheerpJ не загрузился в течение ' + maxWait + 'ms'));
+                        return;
+                    }
+                    
+                    // Проверяем каждые 100мс
+                    setTimeout(check, 100);
                 }
+                
+                check();
+            });
+        }
+        
+        // Ждем загрузки CheerpJ и затем загружаем main.js
+        waitForCheerpJ().then(() => {
+            console.log("✅ CheerpJ готов, загружаем main.js");
+            import('./src/main.js');
+        }).catch(error => {
+            console.error("❌ Ошибка загрузки CheerpJ:", error);
+            const loading = document.getElementById('loading');
+            if (loading) {
+                loading.textContent = 'Ошибка загрузки CheerpJ: ' + error.message;
+                loading.style.color = 'red';
             }
         });
     </script>
