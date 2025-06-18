@@ -1,3 +1,8 @@
+// Детекция браузера
+function isChrome() {
+    return navigator.userAgent.includes('Chrome') && !navigator.userAgent.includes('Edg');
+}
+
 import { LibMedia } from "../libmedia/libmedia.js";
 import { LibMidi, createUnlockingAudioContext } from "../libmidi/libmidi.js";
 import { EventQueue } from "./eventqueue.js";
@@ -15,6 +20,7 @@ import midiBridgeNatives from "../libjs/libmidibridge.js";
 const evtQueue = new EventQueue();
 const sp = new URLSearchParams(location.search);
 
+// ВАЖНО: используем /app/ префикс для CheerpJ виртуальной файловой системы
 const cheerpjWebRoot = '/app'+location.pathname.replace(/\/[^/]*$/,'');
 
 let isMobile = sp.get('mobile');
@@ -199,22 +205,10 @@ function setListeners() {
         });
 
         e.preventDefault();
-    }, {passive: false});
-
-    display.addEventListener('touchmove', async e => {
-        noMouse = true;
-
-        evtQueue.queueEvent({
-            kind: 'pointerdragged',
-            x: (e.changedTouches[0].pageX - display.offsetLeft) / display.currentCSSZoom | 0,
-            y: (e.changedTouches[0].pageY - display.offsetTop) / display.currentCSSZoom | 0,
-        });
-
-        e.preventDefault();
-    }, {passive: false});
+    });
 
     display.addEventListener('touchend', async e => {
-        noMouse = true;
+        if (e.changedTouches.length == 0) return;
 
         evtQueue.queueEvent({
             kind: 'pointerreleased',
@@ -225,66 +219,74 @@ function setListeners() {
         e.preventDefault();
     });
 
-    document.addEventListener('mousedown', e => {
-        setTimeout(() => display.focus(), 20);
+    display.addEventListener('touchmove', async e => {
+        if (e.changedTouches.length == 0) return;
+
+        evtQueue.queueEvent({
+            kind: 'pointerdragged',
+            x: (e.changedTouches[0].pageX - display.offsetLeft) / display.currentCSSZoom | 0,
+            y: (e.changedTouches[0].pageY - display.offsetTop) / display.currentCSSZoom | 0,
+        });
+
+        e.preventDefault();
     });
 
-    display.addEventListener('blur', e => {
-        // it doesn't work without any timeout
-        setTimeout(() => display.focus(), 10);
+    document.addEventListener('keydown', e => {
+        if (e.code == 'KeyR' && e.ctrlKey) {
+            location.reload();
+            e.preventDefault();
+        }
+
+        if (e.code == 'KeyG' && e.ctrlKey) {
+            location.href = '/';
+            e.preventDefault();
+        }
+
+        if (e.code == 'KeyF') {
+            fractionScale = !fractionScale;
+            if (localStorage) {
+                localStorage.setItem("pl.zb3.freej2me.fractionScale", fractionScale);
+            }
+            autoscale();
+            e.preventDefault();
+        }
     });
 
     window.addEventListener('resize', autoscale);
 
-    initKbdListeners();
-    setKbdHandler(window.handleVirtualKey);
+    if (isMobile) {
+        initKbdListeners(setKbdHandler);
+        setKbdHandler(evtQueue.queueEvent.bind(evtQueue));
+    }
 }
 
 function setFaviconFromBuffer(arrayBuffer) {
     const blob = new Blob([arrayBuffer], { type: 'image/png' });
-
-    const reader = new FileReader();
-    reader.onload = function() {
-        const dataURL = reader.result;
-
-        let link = document.querySelector("link[rel*='icon']");
-        if (!link) {
-            link = document.createElement('link');
-            link.setAttribute('rel', 'icon');
-            document.head.appendChild(link);
-        }
-        link.setAttribute('href', dataURL);
-    };
-    reader.readAsDataURL(blob);
+    const url = URL.createObjectURL(blob);
+    
+    // Удаляем старые favicon элементы
+    const existingLinks = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
+    existingLinks.forEach(link => link.remove());
+    
+    // Создаем новый favicon
+    const link = document.createElement('link');
+    link.rel = 'icon';
+    link.type = 'image/png';
+    link.href = url;
+    document.head.appendChild(link);
+    
+    console.log('✅ Установлен favicon игры');
 }
 
 function cleanup() {
-    console.log('Main: Очищаем ресурсы...');
-    
-    // Очищаем MIDI слушатели
-    if (window.libmidi && window.libmidi.midiPlayer && midiEOMHandler) {
-        window.libmidi.midiPlayer.removeEventListener('end-of-media', midiEOMHandler);
+    if (window.libmidi && window.libmidi.destroy) {
+        window.libmidi.destroy();
     }
     
-    // Очищаем кеш MIDI плеера
-    if (window.libMidiBridge && window.libMidiBridge.clearMidiPlayerCache) {
-        window.libMidiBridge.clearMidiPlayerCache();
-    }
-    
-    // Закрываем LibMidi
-    if (window.libmidi) {
-        window.libmidi.close();
-    }
-    
-    // Закрываем LibMedia
-    if (window.libmedia) {
-        window.libmedia.close();
+    if (window.libmedia && window.libmedia.destroy) {
+        window.libmedia.destroy();
     }
 }
-
-// Добавляем слушатели для очистки при закрытии страницы
-window.addEventListener('beforeunload', cleanup);
-window.addEventListener('unload', cleanup);
 
 async function init() {
     // Фильтруем debug логи FreeJ2ME 
@@ -341,16 +343,15 @@ async function init() {
             window.libmidi.midiPlayer.addEventListener('end-of-media', midiEOMHandler);
         }
 
-        // CheerpJ загружается локально в HTML, проверяем что он доступен
-        if (typeof cheerpjInit === 'undefined') {
-            console.error('❌ CheerpJ недоступен, несмотря на локальную загрузку');
-            throw new Error('CheerpJ не найден. Возможно, проблема с загрузкой локальных файлов.');
+        // Проверяем что CheerpJ загружен
+        if (typeof cheerpjInit === 'undefined' && typeof window.cheerpjInit === 'undefined') {
+            throw new Error('CheerpJ не загружен. Проверьте соединение с интернетом и попробуйте обновить страницу.');
         }
         
-        console.log('✅ CheerpJ найден и готов к использованию');
+        // Используем window.cheerpjInit если cheerpjInit недоступен
+        const cheerpjInitFunc = typeof cheerpjInit !== 'undefined' ? cheerpjInit : window.cheerpjInit;
 
-        console.log('🔧 Начинаем инициализацию CheerpJ...');
-        await cheerpjInit({
+        await cheerpjInitFunc({
         enableDebug: false,
         natives: {
             ...canvasFontNatives,
@@ -456,46 +457,33 @@ async function init() {
         }
     });
 
-    console.log('✅ CheerpJ инициализирован успешно');
+    document.getElementById("loading").textContent = "Loading...";
 
-    document.getElementById("loading").textContent = "Loading Java library...";
-
-    console.log('📚 Загружаем JAR библиотеку:', cheerpjWebRoot+"/freej2me-web.jar");
     const lib = await cheerpjRunLibrary(cheerpjWebRoot+"/freej2me-web.jar");
-    console.log('✅ JAR библиотека загружена:', lib);
     
     // Устанавливаем emulator для bridge callbacks
     window.emulator = lib;
 
     console.log("CheerpJ runtime ready");
 
-    console.log('🎮 Получаем класс FreeJ2ME...');
     const FreeJ2ME = await lib.org.recompile.freej2me.FreeJ2ME;
-    console.log('✅ Класс FreeJ2ME получен:', FreeJ2ME);
 
     let args;
-
-    console.log('📋 Анализируем URL параметры...');
-    console.log('🔍 sp.get("app"):', sp.get('app'));
-    console.log('🔍 sp.get("jar"):', sp.get('jar'));
 
     if (sp.get('app')) {
         const appId = sp.get('app');
         console.log(`Main: Запуск приложения ${appId} в app режиме`);
         
         // Загружаем настройки только из файла конфига
-        console.log('⚙️ Загружаем настройки из конфига...');
         await loadSettingsFromConfig(appId, lib);
         
         args = ['app', appId];
-        console.log('✅ Аргументы установлены для app режима:', args);
     } else {
         // Используем LauncherUtil для инициализации JAR как приложения
         const jarName = sp.get('jar') || "game.jar";
         const appId = jarName.replace('.jar', '');
         
         console.log(`Main: Инициализируем JAR ${jarName} как app ${appId} через LauncherUtil...`);
-        console.log('🔄 Переходим в JAR режим инициализации...');
         
         try {
             const LauncherUtil = await lib.pl.zb3.freej2me.launcher.LauncherUtil;
@@ -665,196 +653,151 @@ async function init() {
     console.log("Main: Запускаем FreeJ2ME с аргументами:", args);
     
     try {
-        console.log('🚀 Вызываем FreeJ2ME.main()...');
         await FreeJ2ME.main(args);
         console.log("Main: FreeJ2ME запущен успешно");
     } catch (e) {
         console.error("Main: Краш FreeJ2ME:", e);
-        if (e.printStackTrace) {
-            e.printStackTrace();
-        }
-        document.getElementById('loading').textContent = 'Crash :(';
+        document.getElementById("loading").textContent = "Failed to start: " + e.toString();
+        throw e;
     }
 
-    console.log("Main: Инициализация завершена");
-    } catch (error) {
-        console.error("Main: Ошибка инициализации:", error);
-        document.getElementById('loading').textContent = 'Ошибка инициализации: ' + error.message;
+    } catch (e) {
+        console.error("Main: Краш init:", e);
+        document.getElementById("loading").textContent = "Failed to init: " + e.toString();
+        throw e;
     }
 }
 
-// Функция для загрузки настроек из конфига
 async function loadSettingsFromConfig(appId, lib) {
+    console.log(`Main: Загружаем настройки для ${appId} из конфига...`);
+    
     try {
-        console.log(`Main: Загружаем настройки для приложения ${appId} из конфига...`);
-        
-        const settingsPath = `/files/${appId}/config/settings.conf`;
-        const settingsBlob = await cjFileBlob(settingsPath);
-        
-        if (settingsBlob) {
-            const settingsContent = await settingsBlob.text();
-            console.log(`Main: Найдены сохраненные настройки: "${settingsContent}"`);
-            
-            if (settingsContent.trim()) {
-                console.log("Main: Настройки загружены из файла успешно");
-            } else {
-                console.log("Main: Файл настроек пустой - используем настройки по умолчанию без сохранения");
-            }
-        } else {
-            console.log("Main: Файл настроек не найден - используем настройки по умолчанию без сохранения");
-        }
-        
-    } catch (error) {
-        console.error("Main: Ошибка загрузки настроек из конфига:", error);
-    }
-}
-
-// Функция для сохранения дефолтных настроек 
-async function saveDefaultSettings(appId, libOrLauncherUtil, LauncherUtil) {
-    try {
-        console.log(`Main: Сохраняем дефолтные настройки для приложения ${appId}...`);
-        
-        let lib, launcherUtil;
-        
-        // Если второй параметр это lib объект
-        if (libOrLauncherUtil && libOrLauncherUtil.pl) {
-            lib = libOrLauncherUtil;
-            launcherUtil = LauncherUtil || await lib.pl.zb3.freej2me.launcher.LauncherUtil;
-        } else {
-            // Если второй параметр это LauncherUtil (старый вызов)
-            launcherUtil = libOrLauncherUtil;
-            // lib должен быть доступен глобально
-            lib = window.lib;
-        }
-        
+        const LauncherUtil = await lib.pl.zb3.freej2me.launcher.LauncherUtil;
         const HashMap = await lib.java.util.HashMap;
         
-        // Создаем дефолтные настройки без привязки к URL
-        console.log(`Main: Создаем дефолтные настройки для нового приложения ${appId}`);
-        
-        const correctSettings = await new HashMap();
-        
-        // Валидируем числовые значения чтобы избежать NumberFormatException
-        const validatedWidth = "240";  // всегда строка числа
-        const validatedHeight = "320"; // всегда строка числа
-        
-        await correctSettings.put("phone", "Standard");
-        await correctSettings.put("fontSize", "2");  // 2 = Medium (как в оригинале)
-        await correctSettings.put("dgFormat", "4444");
-        await correctSettings.put("width", validatedWidth);
-        await correctSettings.put("height", validatedHeight);
-        await correctSettings.put("sound", "on");
-        await correctSettings.put("rotate", "off");
-        await correctSettings.put("forceFullscreen", "off");
-        await correctSettings.put("textureDisableFilter", "off");
-        await correctSettings.put("queuedPaint", "off");
-        await correctSettings.put("limitFps", "0");
-        
-        // Удаляем старое поле fps если оно есть (из Java кода)
-        if (await correctSettings.containsKey("fps")) {
-            await correctSettings.remove("fps");
-            console.log("Main: Удалили старое поле fps из настроек");
+        // Проверяем существует ли файл настроек
+        const settingsPath = `/files/${appId}/config/settings.conf`;
+        try {
+            const settingsBlob = await cjFileBlob(settingsPath);
+            if (settingsBlob) {
+                const settingsContent = await settingsBlob.text();
+                console.log(`Main: Настройки из файла: ${settingsContent}`);
+                
+                if (settingsContent.trim()) {
+                    console.log("Main: Настройки загружены из файла");
+                    return;
+                }
+            }
+        } catch (e) {
+            console.log("Main: Файл настроек не найден, создаем дефолтные");
         }
         
-        console.log(`Main: Валидированные настройки: width=${validatedWidth}, height=${validatedHeight}`);
+        // Если настроек нет, создаем дефолтные
+        await saveDefaultSettings(appId, lib, LauncherUtil);
         
-        const emptyAppProps = await new HashMap();
-        const emptySysProps = await new HashMap();
+    } catch (error) {
+        console.error("Main: Ошибка загрузки настроек:", error);
+    }
+}
+
+async function saveDefaultSettings(appId, libOrLauncherUtil, LauncherUtil) {
+    console.log(`Main: Создаем дефолтные настройки для ${appId}...`);
+    
+    try {
+        // Если передана библиотека напрямую, получаем LauncherUtil
+        let launcherUtil = LauncherUtil;
+        if (!launcherUtil) {
+            launcherUtil = await libOrLauncherUtil.pl.zb3.freej2me.launcher.LauncherUtil;
+        }
         
-        console.log("Main: Вызываем LauncherUtil.saveApp...");
-        await launcherUtil.saveApp(appId, correctSettings, emptyAppProps, emptySysProps);
+        const HashMap = await libOrLauncherUtil.java.util.HashMap || 
+                       await launcherUtil.java.util.HashMap ||
+                       await (async () => {
+                           const lib = window.emulator || libOrLauncherUtil;
+                           return await lib.java.util.HashMap;
+                       })();
+        
+        const settings = await new HashMap();
+        
+        // Настройки эмуляции
+        await settings.put("emulateKeyboard", "false");      // false для touch устройств
+        await settings.put("emulatePointer", "false");       // false для мыши/touch
+        await settings.put("virtualKeyboard", "false");      // виртуальная клавиатура
+        await settings.put("rotateDisplay", "false");        // поворот дисплея
+        await settings.put("limitFPS", "false");             // НЕ ограничиваем FPS для web (удалили fps настройку совсем)
+        await settings.put("soundEnabled", "true");          // включаем звук
+        
+        // Настройки интерфейса - используем ЧИСЛА вместо строк 
+        await settings.put("fontSize", "12");                // размер шрифта как число
+        await settings.put("colorSystem", "Nokia");          // цветовая схема
+        await settings.put("screenSize", "0");               // авто-размер экрана
+        await settings.put("graphicsAPI", "standard");       // стандартный graphics API
+        
+        // Настройки платформы 
+        await settings.put("phone", "Nokia");                // эмуляция Nokia
+        await settings.put("manufacturer", "Nokia");         // производитель 
+        await settings.put("model", "6280");                 // модель телефона
+        await settings.put("locale", "en-US");               // локаль
+        
+        // Сохраняем настройки - используем статический метод класса
+        const LauncherUtilClass = launcherUtil.constructor || launcherUtil;
+        await LauncherUtilClass.saveSettings(appId, settings);
         console.log("Main: Дефолтные настройки сохранены");
         
-        // Проверяем что сохранилось и что нет старого поля fps
-        setTimeout(async () => {
-            try {
-                const newSettingsBlob = await cjFileBlob(`/files/${appId}/config/settings.conf`);
-                if (newSettingsBlob) {
-                    const newContent = await newSettingsBlob.text();
-                    console.log(`Main: Проверка сохранения - содержимое файла: "${newContent}"`);
-                    
-                    // Проверяем что нет старого поля fps
-                    if (newContent.includes('fps:')) {
-                        console.error("Main: ОШИБКА! В файле все еще есть старое поле fps!");
-                    } else {
-                        console.log("Main: ✓ Поле fps отсутствует, настройки корректны");
-                    }
-                } else {
-                    console.log("Main: Проверка сохранения - файл не найден!");
-                }
-            } catch (checkError) {
-                console.error("Main: Ошибка проверки сохранения:", checkError);
-            }
-        }, 2000);
-        
-    } catch (error) {
-        console.error("Main: Ошибка сохранения дефолтных настроек:", error);
-        console.error("Main: Stack trace:", error.stack);
-    }
-}
-
-// Функция для применения настроек к запущенной игре
-window.applyGameSettings = async function(appId, settings) {
-    console.log(`Main: Применяем настройки к запущенной игре ${appId}:`, settings);
-    
-    if (!window.emulator) {
-        throw new Error("Эмулятор не запущен");
-    }
-    
-    try {
-        // Получаем Config из эмулятора
-        const Config = await window.emulator.org.recompile.freej2me.Config;
-        
-        // Применяем настройки
-        const settingsMap = await Config.settings;
-        
-        // Преобразуем настройки в правильный формат
-        await settingsMap.put("width", settings.width.toString());
-        await settingsMap.put("height", settings.height.toString());
-        await settingsMap.put("phone", settings.phone);
-        await settingsMap.put("dgFormat", settings.dgFormat);
-        await settingsMap.put("fontSize", settings.fontSize.toString());
-        await settingsMap.put("limitFps", settings.limitFps.toString());
-        await settingsMap.put("sound", settings.sound ? "on" : "off");
-        await settingsMap.put("rotate", settings.rotate ? "on" : "off");
-        await settingsMap.put("forceFullscreen", settings.forceFullscreen ? "on" : "off");
-        await settingsMap.put("textureDisableFilter", "off");
-        await settingsMap.put("queuedPaint", "off");
-        
-        // Удаляем старое поле fps если оно есть
-        if (await settingsMap.containsKey("fps")) {
-            await settingsMap.remove("fps");
-            console.log("Main: Удалили старое поле fps из настроек запущенной игры");
+        // Логируем что именно сохранили
+        console.log("Main: Сохраненные настройки:");
+        const settingsEntries = await settings.entrySet();
+        const iterator = await settingsEntries.iterator();
+        while (await iterator.hasNext()) {
+            const entry = await iterator.next();
+            const key = await entry.getKey();
+            const value = await entry.getValue();
+            console.log(`  ${key}: ${value}`);
         }
         
-        // Сохраняем настройки в файл
-        await saveUpdatedSettings(appId, settingsMap);
-        
-        console.log("Main: Настройки успешно применены к запущенной игре");
-        return true;
     } catch (error) {
-        console.error("Main: Ошибка применения настроек:", error);
-        throw error;
-    }
-};
-
-// Вспомогательная функция для сохранения обновленных настроек
-async function saveUpdatedSettings(appId, settingsMap) {
-    try {
-        const LauncherUtil = await window.emulator.pl.zb3.freej2me.launcher.LauncherUtil;
-        const HashMap = await window.emulator.java.util.HashMap;
-        
-        // Сохраняем настройки через LauncherUtil
-        const emptyAppProps = await new HashMap();
-        const emptySysProps = await new HashMap();
-        
-        await LauncherUtil.saveApp(appId, settingsMap, emptyAppProps, emptySysProps);
-        
-        console.log(`Main: Обновленные настройки сохранены для ${appId}`);
-    } catch (error) {
-        console.error(`Main: Ошибка сохранения обновленных настроек для ${appId}:`, error);
-        throw error;
+        console.error("Main: Ошибка создания дефолтных настроек:", error);
     }
 }
 
-init();
+async function saveUpdatedSettings(appId, settingsMap) {
+    console.log(`Main: Обновляем настройки для ${appId}...`);
+    
+    try {
+        const lib = window.emulator;
+        if (!lib) {
+            throw new Error("Эмулятор не инициализирован");
+        }
+        
+        const LauncherUtil = await lib.pl.zb3.freej2me.launcher.LauncherUtil;
+        const HashMap = await lib.java.util.HashMap;
+        
+        const settings = await new HashMap();
+        
+        // Переносим настройки из JS объекта в Java HashMap
+        for (const [key, value] of Object.entries(settingsMap)) {
+            await settings.put(key, String(value));
+        }
+        
+        // Сохраняем настройки
+        await LauncherUtil.saveSettings(appId, settings);
+        console.log("Main: Настройки обновлены и сохранены");
+        
+        // Логируем что именно сохранили
+        console.log("Main: Обновленные настройки:");
+        for (const [key, value] of Object.entries(settingsMap)) {
+            console.log(`  ${key}: ${value}`);
+        }
+        
+    } catch (error) {
+        console.error("Main: Ошибка обновления настроек:", error);
+    }
+}
+
+// Автоматически вызываем init при загрузке модуля
+console.log("🚀 Main: Модуль загружен, начинаем инициализацию...");
+init().catch(error => {
+    console.error("❌ Main: Критическая ошибка инициализации:", error);
+});
+
+export { init, saveUpdatedSettings };

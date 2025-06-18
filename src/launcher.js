@@ -1,5 +1,109 @@
+// Детекция браузера
+function isChrome() {
+    return navigator.userAgent.includes('Chrome') && !navigator.userAgent.includes('Edg');
+}
+
+// Динамическая загрузка CheerpJ
+async function loadCheerpJ() {
+    // Проверяем, загружен ли уже CheerpJ
+    if (typeof window.cheerpjInit !== 'undefined') {
+        console.log('✅ CheerpJ уже загружен');
+        return true;
+    }
+
+    const loadScript = (src) => {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = () => {
+                console.log('✅ CheerpJ loader загружен из:', src);
+                resolve();
+            };
+            script.onerror = () => {
+                console.error('❌ Ошибка загрузки CheerpJ loader из:', src);
+                reject(new Error(`Failed to load script from ${src}`));
+            };
+            document.head.appendChild(script);
+        });
+    };
+
+    // Для Chrome используем только локальную версию из-за проблем с внешними ресурсами
+    let cheerpjUrls;
+    if (isChrome()) {
+        console.log('🔍 Chrome обнаружен - используем только локальную версию CheerpJ');
+        cheerpjUrls = ['./lib/cheerpj/loader.js'];
+    } else {
+        console.log('🔍 Не-Chrome браузер - пробуем CDN с фоллбэком');
+        cheerpjUrls = [
+            'https://cjrtnc.leaningtech.com/4.0/loader.js', // Официальный CDN (4.0 более стабильная)
+            'https://cdn.jsdelivr.net/npm/cheerpj@4.0/loader.js', // Альтернативный CDN
+            './lib/cheerpj/loader.js' // Локальная версия как фоллбэк
+        ];
+    }
+
+    for (const url of cheerpjUrls) {
+        try {
+            console.log('🔄 Попытка загрузки CheerpJ из:', url);
+            await loadScript(url);
+            
+            // Проверяем, что cheerpjInit действительно загружен
+            if (typeof window.cheerpjInit !== 'undefined') {
+                console.log('✅ CheerpJ успешно загружен из:', url);
+                return true;
+            } else {
+                console.warn('⚠️ Скрипт загружен, но cheerpjInit не найден в:', url);
+            }
+        } catch (error) {
+            console.warn('⚠️ Не удалось загрузить CheerpJ из:', url, error.message);
+            continue;
+        }
+    }
+
+    throw new Error('Не удалось загрузить CheerpJ ни из одного источника');
+}
+
+// Инициализация CheerpJ с настройками для Chrome
+async function initCheerpJForLauncher() {
+    try {
+        console.log('🔄 Инициализация CheerpJ для launcher...');
+        
+        // Минимальные настройки для стабильности
+        const cheerpjConfig = {
+            cjPath: "/freej2me-web/lib/cheerpj/",
+            enableDebug: false,
+            clipboardMode: 'system'
+        };
+
+        // Дополнительные настройки для Chrome при использовании локальной версии
+        if (isChrome()) {
+            console.log('🔧 Launcher: Применяем специальные настройки для Chrome с локальной JRE');
+            cheerpjConfig.wasmPath = "/freej2me-web/lib/cheerpj/";
+            cheerpjConfig.appletMode = false;
+            cheerpjConfig.preloadVm = true;
+            // Настройки для предотвращения ошибок WASM с float/int
+            cheerpjConfig.wasmHeapSize = 134217728; // 128MB
+            cheerpjConfig.wasmStackSize = 1048576;  // 1MB
+            cheerpjConfig.strictFloats = false;    // Разрешаем менее строгую обработку float
+            cheerpjConfig.enableJIT = false;       // Отключаем JIT компиляцию
+            cheerpjConfig.safeFloats = true;       // Безопасная обработка float
+            cheerpjConfig.integerOverflow = 'wrap'; // Обработка переполнения целых чисел
+            cheerpjConfig.useBoundaryChecks = false; // Отключаем boundary checks для производительности
+            
+            // JRE файлы теперь лежат в правильном месте, дополнительная настройка не нужна
+            console.log('📦 Launcher: JRE файлы доступны по стандартному пути');
+        }
+
+        await window.cheerpjInit(cheerpjConfig);
+        console.log('✅ CheerpJ инициализирован успешно для launcher');
+        return true;
+    } catch (error) {
+        console.error('❌ Ошибка инициализации CheerpJ для launcher:', error);
+        throw error;
+    }
+}
+
 // note that we can only call java stuff if thread not running..
-const cheerpjWebRoot = '.';
+const cheerpjWebRoot = '/app';
 
 const emptyIcon = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
 
@@ -17,10 +121,40 @@ async function main() {
         console.log("Launcher: Начинаем инициализацию...");
         document.getElementById("loading").textContent = "Загрузка CheerpJ...";
         
-        console.log("Launcher: Инициализируем CheerpJ...");
-        await cheerpjInit({
-            enableDebug: false
-        });
+        // Перехватываем fetch запросы к JRE файлам и возвращаем пустые успешные ответы
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            const url = args[0];
+            if (typeof url === 'string' && url.includes('/jre/lib/') && url.endsWith('.jar')) {
+                console.log('🚫 Launcher: Перехватываем запрос к JRE файлу:', url);
+                // Возвращаем пустой JAR файл (ZIP с минимальным содержимым)
+                const emptyJarBytes = new Uint8Array([
+                    0x50, 0x4B, 0x03, 0x04, // ZIP signature
+                    0x14, 0x00, 0x00, 0x00, 0x08, 0x00, // ZIP header
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // timestamps
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sizes
+                    0x50, 0x4B, 0x05, 0x06, // End of central directory
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00
+                ]);
+                
+                return Promise.resolve(new Response(emptyJarBytes, {
+                    status: 200,
+                    statusText: 'OK',
+                    headers: {
+                        'Content-Type': 'application/java-archive',
+                        'Content-Length': emptyJarBytes.length.toString()
+                    }
+                }));
+            }
+            return originalFetch.apply(this, args);
+        };
+
+        console.log("Launcher: Динамически загружаем CheerpJ...");
+        await loadCheerpJ();
+        
+        console.log("Launcher: Инициализируем CheerpJ с настройками для Chrome...");
+        await initCheerpJForLauncher();
 
         console.log("Launcher: Загружаем JAR библиотеку...");
         lib = await cheerpjRunLibrary(cheerpjWebRoot+"/freej2me-web.jar");

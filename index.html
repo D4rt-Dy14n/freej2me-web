@@ -136,6 +136,29 @@
         .game-header {
             padding: 20px;
             border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .game-icon-container {
+            flex-shrink: 0;
+        }
+
+        .game-icon {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+
+        .game-info-container {
+            flex: 1;
         }
 
         .game-title {
@@ -565,10 +588,10 @@
         let currentGameProcess = null;
 
         // Инициализация при загрузке страницы
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
             setupDragAndDrop();
             setupFileInput();
-            loadGamesList();
+            await loadGamesList();
         });
 
         // Настройка drag & drop
@@ -652,7 +675,7 @@
                 }
                 
                 localStorage.setItem('uploadedGames', JSON.stringify(uploadedGames));
-                loadGamesList(); // Перезагружаем список игр
+                await loadGamesList(); // Перезагружаем список игр
                 document.getElementById('fileInput').value = ''; // Очищаем input
                 
             } catch (error) {
@@ -699,6 +722,59 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
+        // Извлечение иконки из JAR файла
+        async function extractIconFromJar(filename, isUploaded = false) {
+            try {
+                // Проверяем кэш
+                const cacheKey = `gameIcon_${filename}`;
+                const cachedIcon = localStorage.getItem(cacheKey);
+                if (cachedIcon) {
+                    return cachedIcon;
+                }
+
+                let jarData;
+                
+                if (isUploaded) {
+                    // Для загруженных игр берем данные из localStorage
+                    const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                    const game = uploadedGames.find(g => g.filename === filename);
+                    if (!game || !game.data) {
+                        return null;
+                    }
+                    jarData = base64ToArrayBuffer(game.data);
+                } else {
+                    // Для предустановленных игр загружаем через fetch
+                    const response = await fetch(`./games/${filename}`);
+                    if (!response.ok) {
+                        return null;
+                    }
+                    jarData = await response.arrayBuffer();
+                }
+
+                // Распаковываем JAR (это ZIP архив)
+                const zip = new JSZip();
+                await zip.loadAsync(jarData);
+                
+                // Ищем icon.png
+                const iconFile = zip.file("icon.png");
+                if (!iconFile) {
+                    return null;
+                }
+                
+                // Получаем данные иконки
+                const iconData = await iconFile.async("base64");
+                const iconDataUrl = `data:image/png;base64,${iconData}`;
+                
+                // Кэшируем иконку
+                localStorage.setItem(cacheKey, iconDataUrl);
+                
+                return iconDataUrl;
+            } catch (error) {
+                console.warn(`Не удалось извлечь иконку из ${filename}:`, error);
+                return null;
+            }
+        }
+
         // Загрузка списка игр
         async function loadGamesList() {
             try {
@@ -725,7 +801,7 @@
         }
 
         // Отображение списка игр
-        function displayGamesList(games) {
+        async function displayGamesList(games) {
             const gamesList = document.getElementById('gamesList');
             
             if (games.length === 0) {
@@ -739,12 +815,20 @@
                 return;
             }
             
+            // Сначала показываем игры без иконок
             gamesList.innerHTML = games.map(game => `
-                <div class="game-card">
+                <div class="game-card" data-filename="${game.filename}">
                     <div class="game-header">
-                        <div class="game-title">${game.name} ${game.isUploaded ? '(Загружена)' : ''}</div>
-                        <div class="game-info">Размер: ${game.size}</div>
-                        ${game.uploadDate ? `<div class="game-info">Загружена: ${new Date(game.uploadDate).toLocaleDateString()}</div>` : ''}
+                        <div class="game-icon-container">
+                            <div class="game-icon" id="icon-${game.filename.replace('.', '_')}">
+                                🎮
+                            </div>
+                        </div>
+                        <div class="game-info-container">
+                            <div class="game-title">${game.name} ${game.isUploaded ? '(Загружена)' : ''}</div>
+                            <div class="game-info">Размер: ${game.size}</div>
+                            ${game.uploadDate ? `<div class="game-info">Загружена: ${new Date(game.uploadDate).toLocaleDateString()}</div>` : ''}
+                        </div>
                     </div>
                     <div class="game-actions">
                         <button class="btn btn-primary" onclick="runGame('${game.filename}', ${game.isUploaded || false})">
@@ -764,11 +848,29 @@
                     </div>
                 </div>
             `).join('');
+
+            // Загружаем иконки асинхронно
+            games.forEach(async (game) => {
+                const iconElement = document.getElementById(`icon-${game.filename.replace('.', '_')}`);
+                if (iconElement) {
+                    const iconUrl = await extractIconFromJar(game.filename, game.isUploaded);
+                    if (iconUrl) {
+                        iconElement.innerHTML = `<img src="${iconUrl}" alt="${game.name}" style="width: 60px; height: 60px; border-radius: 8px;">`;
+                    }
+                }
+            });
         }
 
         // Запуск игры
         async function runGame(filename, isUploaded = false) {
             try {
+                // Извлекаем иконку для использования как favicon
+                const iconUrl = await extractIconFromJar(filename, isUploaded);
+                if (iconUrl) {
+                    // Сохраняем иконку для использования в run.html
+                    sessionStorage.setItem('currentGameIcon', iconUrl);
+                }
+                
                 // Запускаем только с jar параметром - все настройки берутся из конфига
                 // Убираем uploaded=true из URL так как это не нужно
                 const runUrl = `./run.html?jar=${encodeURIComponent(filename)}`;
@@ -816,7 +918,7 @@
                     clearGameData(filename);
                     
                         showNotification('Игра удалена', 'success');
-                    loadGamesList(); // Перезагружаем список
+                    await loadGamesList(); // Перезагружаем список
                 } catch (error) {
                     console.error('Ошибка:', error);
                     showNotification('Ошибка удаления игры', 'error');
@@ -997,6 +1099,7 @@
         // Все настройки берутся из конфиг файлов в main.js
     </script>
     
+    <script src="./lib/jszip.min.js"></script>
     <script src="./lib/cheerpj/loader.js" onload="console.log('📥 loader.js загружен');" onerror="console.error('❌ Ошибка загрузки loader.js');"></script>
     <script type="module">
         console.log("🚀 Загружаем CheerpJ локально...");
@@ -1032,17 +1135,11 @@
             });
         }
         
-        // Ждем загрузки CheerpJ и затем загружаем main.js
+        // В index.html не загружаем main.js - он загружается только в run.html
         waitForCheerpJ().then(() => {
-            console.log("✅ CheerpJ готов, загружаем main.js");
-            import('./src/main.js');
+            console.log("✅ CheerpJ готов (index.html)");
         }).catch(error => {
             console.error("❌ Ошибка загрузки CheerpJ:", error);
-            const loading = document.getElementById('loading');
-            if (loading) {
-                loading.textContent = 'Ошибка загрузки CheerpJ: ' + error.message;
-                loading.style.color = 'red';
-            }
         });
     </script>
 </body>
