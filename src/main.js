@@ -636,7 +636,7 @@ async function init() {
         } catch (error) {
             console.error("Main: Ошибка LauncherUtil, fallback to jar:", error);
             // Fallback to jar режим
-            args = ['jar', "/app/jar/" + jarName];
+            args = ['jar', "./games/" + jarName];
         }
     }
 
