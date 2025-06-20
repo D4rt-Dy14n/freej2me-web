@@ -561,17 +561,13 @@ async function init() {
                             console.log(`Main: Загружено ${jarData.byteLength} байт`);
                         }
                         
-                        // Создаем директории
-                        await Files.createDirectories(appDirPath);
-                        console.log(`Main: Создана директория ${appDir}`);
-                        
-                        // Записываем файл напрямую в целевой путь
+                        // Записываем файл прямо в /files/<jarName>
                         const uint8Array = new Uint8Array(jarData);
-                        const targetPath = appJarPath; // /files/<appId>/app.jar
+                        const targetPath = "/files/" + jarName;
                         await cheerpOSAddStringFile(targetPath, uint8Array);
                         console.log(`Main: Файл записан в ${targetPath}`);
 
-                        // Проверяем финальный файл напрямую
+                        // Проверяем финальный файл
                         const targetFilePath = await Paths.get(targetPath);
                         const exists = await Files.exists(targetFilePath);
                         if (exists) {
@@ -588,25 +584,8 @@ async function init() {
                 }
             }
             
-            // Сохраняем дефолтные настройки только если приложение новое
-            if (initSuccess && !appExists) {
-                console.log("Main: Создаем дефолтные настройки для нового приложения...");
-                
-                // Удаляем старые настройки если есть, чтобы убрать поле fps
-                try {
-                    const oldSettingsPath = `/files/${appId}/config/settings.conf`;
-                    const settingsFilePath = await Paths.get(oldSettingsPath);
-                    await Files.deleteIfExists(settingsFilePath);
-                    console.log("Main: Удалили старые настройки");
-                } catch (e) {
-                    console.log("Main: Старые настройки отсутствуют");
-                }
-                
-                await saveDefaultSettings(appId, lib, LauncherUtil);
-            }
-            
-            // Используем app режим
-            args = ['app', appId];
+            // Запускаем напрямую JAR режим
+            args = ['jar', "/files/" + jarName];
             
         } catch (error) {
             console.error("Main: Ошибка LauncherUtil, fallback to jar:", error);
