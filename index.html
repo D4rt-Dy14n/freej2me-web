@@ -747,8 +747,49 @@
                 const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
                 
                 // Объединяем списки
-                const allGames = [...preinstalledGames, ...uploadedGames];
-                
+                let allGames = [...preinstalledGames, ...uploadedGames];
+
+                // Функция форматирования
+                function formatFileSize(bytes) {
+                    const k = 1024;
+                    const sizes = ['B', 'KB', 'MB', 'GB'];
+                    if (bytes === 0) return '0 B';
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+                }
+
+                // Получить размер JAR
+                async function getJarSize(filename, isUploaded) {
+                    try {
+                        if (isUploaded) {
+                            const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                            const game = uploadedGames.find(g => g.filename === filename);
+                            if (game && game.data) {
+                                const bytes = Math.floor((game.data.length * 3) / 4); // base64 -> bytes approx
+                                return formatFileSize(bytes);
+                            }
+                        } else {
+                            const headResp = await fetch(`./games/${filename}`, { method: 'HEAD' });
+                            let size = headResp.headers.get('content-length');
+                            if (size) return formatFileSize(parseInt(size, 10));
+                            const rangeResp = await fetch(`./games/${filename}`, { headers: { 'Range': 'bytes=0-0' } });
+                            size = rangeResp.headers.get('content-range');
+                            if (size) return formatFileSize(parseInt(size.split('/').pop(), 10));
+                        }
+                    } catch (e) {
+                        console.warn('Не удалось узнать размер файла', filename, e);
+                    }
+                    return '—';
+                }
+
+                // Заполняем отсутствующие размеры
+                allGames = await Promise.all(allGames.map(async g => {
+                    if (!g.size || g.size === 'undefined') {
+                        g.size = await getJarSize(g.filename, g.isUploaded);
+                    }
+                    return g;
+                }));
+
                 displayGamesList(allGames);
             } catch (error) {
                 console.error('Ошибка загрузки списка игр:', error);

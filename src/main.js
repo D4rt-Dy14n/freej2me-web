@@ -565,21 +565,17 @@ async function init() {
                         await Files.createDirectories(appDirPath);
                         console.log(`Main: Создана директория ${appDir}`);
                         
-                        // Записываем файл через CheerpJ API
+                        // Записываем файл напрямую в целевой путь
                         const uint8Array = new Uint8Array(jarData);
-                        const targetPath = "/str/" + appId + "_app.jar";
+                        const targetPath = appJarPath; // /files/<appId>/app.jar
                         await cheerpOSAddStringFile(targetPath, uint8Array);
                         console.log(`Main: Файл записан в ${targetPath}`);
-                        
-                        // Копируем из /str/ в /files/
-                        const sourcePath = await Paths.get(targetPath);
-                        await Files.copy(sourcePath, appJarFilePath);
-                        console.log(`Main: Файл скопирован в ${appJarPath}`);
-                        
-                        // Проверяем финальный файл
-                        const exists = await Files.exists(appJarFilePath);
+
+                        // Проверяем финальный файл напрямую
+                        const targetFilePath = await Paths.get(targetPath);
+                        const exists = await Files.exists(targetFilePath);
                         if (exists) {
-                            const size = await Files.size(appJarFilePath);
+                            const size = await Files.size(targetFilePath);
                             console.log(`Main: Финальный файл создан, размер: ${size} байт`);
                             initSuccess = true;
                         } else {
@@ -615,7 +611,7 @@ async function init() {
         } catch (error) {
             console.error("Main: Ошибка LauncherUtil, fallback to jar:", error);
             // Fallback to jar режим
-            args = ['jar', "./games/" + jarName];
+            args = ['jar', "/files/" + jarName];
         }
     }
 
