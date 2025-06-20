@@ -494,6 +494,7 @@ async function init() {
             console.log(`Main: Проверяем существование: ${appDir} = ${appExists}, ${appJarPath} = ${jarExists}`);
             
             let initSuccess = false;
+            let useJarMode = false;
             
             if (appExists && jarExists) {
                 // Приложение уже существует, не копируем JAR заново
@@ -531,66 +532,82 @@ async function init() {
             } else {
                 // Приложение не существует – сразу переходим к ручной копии JAR в /files/
                 {
-                    console.log("Main: Инициализация не удалась, пытаемся скопировать файл вручную...");
+                    console.log("Main: Инициализация не удалась, копируем JAR напрямую в /files...");
                     try {
-                        // Сначала проверяем загруженную игру из localStorage
+                        // Проверяем загруженную игру из localStorage
                         const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
                         const uploadedGame = uploadedGames.find(game => game.filename === jarName);
-                        
+
                         let jarData;
-                        
                         if (uploadedGame && uploadedGame.data) {
                             console.log(`Main: Найдена загруженная игра ${jarName} в localStorage`);
-                            // Декодируем base64 данные
                             const base64 = uploadedGame.data;
                             const binary = atob(base64);
                             jarData = new ArrayBuffer(binary.length);
-                            const uint8Array = new Uint8Array(jarData);
+                            const uint8ArrayTmp = new Uint8Array(jarData);
                             for (let i = 0; i < binary.length; i++) {
-                                uint8Array[i] = binary.charCodeAt(i);
+                                uint8ArrayTmp[i] = binary.charCodeAt(i);
                             }
                             console.log(`Main: Декодировано ${jarData.byteLength} байт из localStorage`);
                         } else {
-                            // Загружаем JAR файл через fetch
                             console.log(`Main: Загружаем ${jarName} через fetch...`);
-                            const response = await fetch("./games/" + jarName);
-                            if (!response.ok) {
-                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                            }
-                            jarData = await response.arrayBuffer();
+                            const resp = await fetch("./games/" + jarName);
+                            if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+                            jarData = await resp.arrayBuffer();
                             console.log(`Main: Загружено ${jarData.byteLength} байт`);
                         }
-                        
-                        // Записываем файл прямо в /files/<jarName>
-                        const uint8Array = new Uint8Array(jarData);
+
+                        // Убеждаемся, что каталог /files существует
+                        try { await Files.createDirectories(await Paths.get('/files')); } catch(e) {}
+
                         const targetPath = "/files/" + jarName;
-                        await cheerpOSAddStringFile(targetPath, uint8Array);
+                        await cheerpOSAddStringFile(targetPath, new Uint8Array(jarData));
                         console.log(`Main: Файл записан в ${targetPath}`);
 
-                        // Проверяем финальный файл
+                        // Проверяем
                         const targetFilePath = await Paths.get(targetPath);
-                        const exists = await Files.exists(targetFilePath);
-                        if (exists) {
+                        if (await Files.exists(targetFilePath)) {
                             const size = await Files.size(targetFilePath);
-                            console.log(`Main: Финальный файл создан, размер: ${size} байт`);
+                            console.log(`Main: ✓ файл сохранён (${size} байт)`);
                             initSuccess = true;
+                            useJarMode = true;
                         } else {
                             throw new Error("Финальный файл не создался");
                         }
-                        
-                    } catch (copyError) {
-                        console.error("Main: Ошибка копирования файла:", copyError.message);
+                    } catch (e) {
+                        console.error("Main: Ошибка копирования файла:", e.message);
                     }
                 }
             }
             
-            // Запускаем напрямую JAR режим
-            args = ['jar', "/files/" + jarName];
+            // Сохраняем дефолтные настройки только если приложение новое
+            if (initSuccess && !appExists) {
+                console.log("Main: Создаем дефолтные настройки для нового приложения...");
+                
+                // Удаляем старые настройки если есть, чтобы убрать поле fps
+                try {
+                    const oldSettingsPath = `/files/${appId}/config/settings.conf`;
+                    const settingsFilePath = await Paths.get(oldSettingsPath);
+                    await Files.deleteIfExists(settingsFilePath);
+                    console.log("Main: Удалили старые настройки");
+                } catch (e) {
+                    console.log("Main: Старые настройки отсутствуют");
+                }
+                
+                await saveDefaultSettings(appId, lib, LauncherUtil);
+            }
+            
+            // Выбор режима запуска после всех операций
+            if (useJarMode) {
+                args = ['jar', '/files/' + jarName];
+            } else {
+                args = ['app', appId];
+            }
             
         } catch (error) {
             console.error("Main: Ошибка LauncherUtil, fallback to jar:", error);
             // Fallback to jar режим
-            args = ['jar', "/files/" + jarName];
+            args = ['jar', "./games/" + jarName];
         }
     }
 
