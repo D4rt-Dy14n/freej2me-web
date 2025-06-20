@@ -529,29 +529,8 @@ async function init() {
                 
                 initSuccess = true;
             } else {
-                // Приложение не существует, пытаемся инициализировать с разными путями
-                const possiblePaths = [
-                    "./games/" + jarName,
-                    "/app/jar/" + jarName,
-                    "/files/" + jarName,
-                    "/jar/" + jarName,
-                    jarName
-                ];
-                
-                for (const path of possiblePaths) {
-                    try {
-                        console.log(`Main: Пробуем инициализировать с путем: ${path}`);
-                        await LauncherUtil.initApp(appId, path);
-                        console.log(`Main: Приложение успешно инициализировано с путем: ${path}`);
-                        initSuccess = true;
-                        break;
-                    } catch (initError) {
-                        console.log(`Main: Ошибка с путем ${path}:`, initError.message);
-                    }
-                }
-                
-                // Если инициализация не удалась, пытаемся вручную скопировать файл
-                if (!initSuccess) {
+                // Приложение не существует – сразу переходим к ручной копии JAR в /files/
+                {
                     console.log("Main: Инициализация не удалась, пытаемся скопировать файл вручную...");
                     try {
                         // Сначала проверяем загруженную игру из localStorage
