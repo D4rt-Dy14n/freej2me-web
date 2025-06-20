@@ -519,17 +519,22 @@ async function init() {
                             console.log(`Main: Загружено ${jarData.byteLength} байт`);
                         }
 
-                        const targetPath = "/files/" + jarName;
-                        await cheerpOSAddStringFile(targetPath, new Uint8Array(jarData));
-                        console.log(`Main: Файл записан в ${targetPath}`);
+                        // Пишем во /str/<jarName>
+                        const tempPath = "/str/" + jarName;
+                        await cheerpOSAddStringFile(tempPath, new Uint8Array(jarData));
+                        console.log(`Main: Файл записан во временный ${tempPath}`);
 
-                        const targetFilePath = await Paths.get(targetPath);
-                        if (await Files.exists(targetFilePath)) {
-                            const size = await Files.size(targetFilePath);
+                        // Копируем в /files/<jarName>
+                        const destPath = "/files/" + jarName;
+                        await Files.copy(await Paths.get(tempPath), await Paths.get(destPath));
+                        console.log(`Main: Файл скопирован в ${destPath}`);
+
+                        if (await Files.exists(await Paths.get(destPath))) {
+                            const size = await Files.size(await Paths.get(destPath));
                             console.log(`Main: ✓ файл сохранён (${size} байт)`);
                             initSuccess = true;
                         } else {
-                            throw new Error("Финальный файл не создался");
+                            throw new Error("Копирование не удалось");
                         }
                         
                     } catch (e) {
