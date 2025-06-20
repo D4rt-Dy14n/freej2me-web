@@ -487,96 +487,51 @@ async function init() {
             const Paths = await lib.java.nio.file.Paths;
             
             const appDir = "/files/" + appId;
-            const appJarPath = appDir + "/app.jar";
             const appDirPath = await Paths.get(appDir);
-            const appJarFilePath = await Paths.get(appJarPath);
-            
             const appExists = await Files.exists(appDirPath);
-            const jarExists = await Files.exists(appJarFilePath);
-            
-            console.log(`Main: Проверяем существование: ${appDir} = ${appExists}, ${appJarPath} = ${jarExists}`);
-            
+            console.log(`Main: Проверяем существование: ${appDir} = ${appExists}`);
             let initSuccess = false;
-            let useJarMode = false;
             
-            if (appExists && jarExists) {
-                // Приложение уже существует, не копируем JAR заново
-                console.log(`Main: Приложение ${appId} уже существует, используем существующую установку`);
-                
-                // Для существующих приложений только проверяем настройки, но НЕ создаем дефолтные
-                const settingsPath = `/files/${appId}/config/settings.conf`;
-                try {
-                    const settingsBlob = await cjFileBlob(settingsPath);
-                    if (settingsBlob) {
-                        const settingsContent = await settingsBlob.text();
-                        if (settingsContent.trim()) {
-                            // Проверяем на наличие неправильных fontSize значений (строки вместо чисел)
-                            if (settingsContent.includes('fontSize:medium') || settingsContent.includes('fontSize:small') || settingsContent.includes('fontSize:large')) {
-                                console.log("Main: Найдены старые настройки с текстовыми fontSize, пересоздаем...");
-                                // Удаляем старые настройки
-                                const settingsFilePath = await Paths.get(settingsPath);
-                                await Files.deleteIfExists(settingsFilePath);
-                                // Создаем новые
-                                await saveDefaultSettings(appId, lib, LauncherUtil);
-                            } else {
-                                console.log("Main: Найдены корректные настройки для существующего приложения");
-                            }
-                        } else {
-                            console.log("Main: Настройки пустые, но приложение существует - пропускаем создание дефолтных");
-                        }
-                    } else {
-                        console.log("Main: Файл настроек не найден, но приложение существует - пропускаем создание дефолтных");
-                    }
-                } catch (error) {
-                    console.log("Main: Ошибка проверки настроек существующего приложения:", error.message);
-                }
-                
-                initSuccess = true;
-            } else {
+            if (!appExists) {
                 // Приложение не существует – сразу переходим к ручной копии JAR в /files/
                 {
-                    console.log("Main: Инициализация не удалась, копируем JAR напрямую в /files...");
+                    console.log("Main: Копируем JAR в /files...");
                     try {
-                        // Проверяем загруженную игру из localStorage
-                        const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
-                        const uploadedGame = uploadedGames.find(game => game.filename === jarName);
+                        // Убеждаемся, что каталог /files существует
+                        try { await Files.createDirectories(await Paths.get('/files')); } catch(e) {}
 
+                        // Пытаемся взять JAR из localStorage, иначе качаем
                         let jarData;
-                        if (uploadedGame && uploadedGame.data) {
+                        const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                        const uploaded = uploadedGames.find(g => g.filename === jarName);
+                        if (uploaded && uploaded.data) {
                             console.log(`Main: Найдена загруженная игра ${jarName} в localStorage`);
-                            const base64 = uploadedGame.data;
-                            const binary = atob(base64);
-                            jarData = new ArrayBuffer(binary.length);
-                            const uint8ArrayTmp = new Uint8Array(jarData);
-                            for (let i = 0; i < binary.length; i++) {
-                                uint8ArrayTmp[i] = binary.charCodeAt(i);
-                            }
+                            const bin = atob(uploaded.data);
+                            jarData = new ArrayBuffer(bin.length);
+                            const u8 = new Uint8Array(jarData);
+                            for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
                             console.log(`Main: Декодировано ${jarData.byteLength} байт из localStorage`);
                         } else {
                             console.log(`Main: Загружаем ${jarName} через fetch...`);
-                            const resp = await fetch("./games/" + jarName);
-                            if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-                            jarData = await resp.arrayBuffer();
+                            const r = await fetch("./games/" + jarName);
+                            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                            jarData = await r.arrayBuffer();
                             console.log(`Main: Загружено ${jarData.byteLength} байт`);
                         }
-
-                        // Убеждаемся, что каталог /files существует
-                        try { await Files.createDirectories(await Paths.get('/files')); } catch(e) {}
 
                         const targetPath = "/files/" + jarName;
                         await cheerpOSAddStringFile(targetPath, new Uint8Array(jarData));
                         console.log(`Main: Файл записан в ${targetPath}`);
 
-                        // Проверяем
                         const targetFilePath = await Paths.get(targetPath);
                         if (await Files.exists(targetFilePath)) {
                             const size = await Files.size(targetFilePath);
                             console.log(`Main: ✓ файл сохранён (${size} байт)`);
                             initSuccess = true;
-                            useJarMode = true;
                         } else {
                             throw new Error("Финальный файл не создался");
                         }
+                        
                     } catch (e) {
                         console.error("Main: Ошибка копирования файла:", e.message);
                     }
@@ -601,11 +556,7 @@ async function init() {
             }
             
             // Выбор режима запуска после всех операций
-            if (useJarMode) {
-                args = ['jar', '/files/' + jarName];
-            } else {
-                args = ['app', appId];
-            }
+            args = ['jar', '/files/' + jarName];
             
         } catch (error) {
             console.error("Main: Ошибка LauncherUtil, fallback to jar:", error);
