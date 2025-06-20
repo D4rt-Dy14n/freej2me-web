@@ -515,6 +515,20 @@
     </div>
 
     <script>
+        // Устанавливаем favicon, сохранённый на этапе запуска игры
+        (() => {
+            const icon = sessionStorage.getItem('currentGameIcon');
+            if (icon) {
+                let link = document.querySelector('link[rel="icon"]');
+                if (!link) {
+                    link = document.createElement('link');
+                    link.rel = 'icon';
+                    document.head.appendChild(link);
+                }
+                link.href = icon;
+            }
+        })();
+
         // Управление информационной панелью
         const infoToggle = document.getElementById('info-toggle');
         const infoPanel = document.getElementById('info-panel');
