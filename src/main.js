@@ -454,7 +454,10 @@ async function init() {
     // Устанавливаем emulator для bridge callbacks
     window.emulator = lib;
 
-    console.log("CheerpJ runtime ready");
+    if (!window.__cheerpReadyLogged) {
+        console.log("CheerpJ runtime ready");
+        window.__cheerpReadyLogged = true;
+    }
 
     const FreeJ2ME = await lib.org.recompile.freej2me.FreeJ2ME;
 
