@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title>FreeJ2ME - Game Manager</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <style>
         * {
@@ -697,6 +698,39 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
+        // === ИКОНКИ ===
+        // Извлечение icon.png из JAR (ZIP) с кешированием в localStorage
+        async function extractIconFromJar(filename, isUploaded = false) {
+            try {
+                const cacheKey = `gameIcon_${filename}`;
+                const cached = localStorage.getItem(cacheKey);
+                if (cached) return cached;
+
+                let jarData;
+                if (isUploaded) {
+                    const uploaded = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                    const game = uploaded.find(g => g.filename === filename);
+                    if (!game || !game.data) return null;
+                    jarData = Uint8Array.from(atob(game.data), c => c.charCodeAt(0)).buffer;
+                } else {
+                    const resp = await fetch(`./games/${filename}`);
+                    if (!resp.ok) return null;
+                    jarData = await resp.arrayBuffer();
+                }
+
+                const zip = await JSZip.loadAsync(jarData);
+                const iconFile = zip.file('icon.png');
+                if (!iconFile) return null;
+                const iconBase64 = await iconFile.async('base64');
+                const url = `data:image/png;base64,${iconBase64}`;
+                localStorage.setItem(cacheKey, url);
+                return url;
+            } catch (e) {
+                console.warn('extractIconFromJar failed', e);
+                return null;
+            }
+        }
+
         // Загрузка списка игр
         async function loadGamesList() {
             try {
@@ -738,7 +772,7 @@
             }
             
             gamesList.innerHTML = games.map(game => `
-                <div class="game-card">
+                <div class="game-card" data-filename="${game.filename}">
                     <div class="game-header">
                         <div class="game-title">${game.name} ${game.isUploaded ? '(Загружена)' : ''}</div>
                         <div class="game-info">Размер: ${game.size}</div>
@@ -762,13 +796,33 @@
                     </div>
                 </div>
             `).join('');
+
+            // Подгружаем иконки асинхронно
+            games.forEach(async (game) => {
+                const header = gamesList.querySelector(`[data-filename="${game.filename}"] .game-header`);
+                if (!header) return;
+                const iconUrl = await extractIconFromJar(game.filename, game.isUploaded || false);
+                if (iconUrl) {
+                    const img = document.createElement('img');
+                    img.src = iconUrl;
+                    img.alt = game.name;
+                    img.style.width = '60px';
+                    img.style.height = '60px';
+                    img.style.borderRadius = '8px';
+                    img.style.marginRight = '10px';
+                    header.prepend(img);
+                }
+            });
         }
 
         // Запуск игры
         async function runGame(filename, isUploaded = false) {
             try {
-                // Запускаем только с jar параметром - все настройки берутся из конфига
-                // Убираем uploaded=true из URL так как это не нужно
+                // Сохраняем favicon
+                const iconUrl = await extractIconFromJar(filename, isUploaded);
+                if (iconUrl) {
+                    sessionStorage.setItem('currentGameIcon', iconUrl);
+                }
                 const runUrl = `./run.html?jar=${encodeURIComponent(filename)}`;
                 console.log('Запуск игры с минимальными параметрами:', runUrl);
                 window.location.href = runUrl;
