@@ -579,18 +579,12 @@ async function init() {
                         await addFileToStrMount(tempPath, new Uint8Array(jarData));
                         console.log(`Main: Файл записан во временный ${tempPath}`);
 
-                        // Копируем в /files/<jarName>, предварительно убирая старую версию (копируем только если нет)
+                        // Копируем JAR во /files/, перед этим пробуем удалить старый файл (если вдруг остался от предыдущих попыток)
                         const destPath = "/files/" + jarName;
                         const destPathObj = await Paths.get(destPath);
-                        if (!(await Files.exists(destPathObj))) {
-                            try { await Files.deleteIfExists(destPathObj); } catch(e) {}
-                            await Files.copy(await Paths.get(tempPath), destPathObj);
-                            console.log(`Main: Файл скопирован в ${destPath}`);
-                        } else {
-                            console.log(`Main: JAR уже существует, пропускаем копирование`);
-                        }
-                        // Чистим временный файл
-                        try { await Files.deleteIfExists(await Paths.get(tempPath)); } catch(e) {}
+                        try { await Files.deleteIfExists(destPathObj); } catch(e) { /* ignore */ }
+                        await Files.copy(await Paths.get(tempPath), destPathObj);
+                        console.log(`Main: Файл скопирован в ${destPath}`);
 
                         if (await Files.exists(await Paths.get(destPath))) {
                             const size = await Files.size(await Paths.get(destPath));
