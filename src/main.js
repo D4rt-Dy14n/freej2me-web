@@ -2,8 +2,20 @@ import { LibMedia } from "../libmedia/libmedia.js";
 import { LibMidi, createUnlockingAudioContext } from "../libmidi/libmidi.js";
 import { EventQueue } from "./eventqueue.js";
 import { initKbdListeners, setKbdHandler, kbdWidth, kbdHeight } from "./screenKbd.js";
-import * as JSZip_Namespace from "../lib/jszip.min.js";
-const JSZip = JSZip_Namespace.default || JSZip_Namespace;
+// JSZip: will be loaded lazily only when we actually need it (fallbackExtractIcon).
+let JSZip = null;
+async function ensureJSZip() {
+    if (JSZip && JSZip.loadAsync) return JSZip;
+    // attempt to use global first (if run.html/index.html included script)
+    if (window.JSZip && window.JSZip.loadAsync) {
+        JSZip = window.JSZip;
+        return JSZip;
+    }
+    // dynamic import as fallback
+    const mod = await import("../lib/jszip.min.js");
+    JSZip = mod.default || mod.JSZip || window.JSZip || mod;
+    return JSZip;
+}
 
 // we need to import natives here, don't use System.loadLibrary
 // since CheerpJ fails to load them in firefox and we can't set breakpoints
@@ -264,11 +276,12 @@ function setFaviconFromBuffer(arrayBuffer) {
 
 // Fallback: извлечь PNG-иконку из JAR
 async function fallbackExtractIcon(jarPath) {
+    const _JSZip = await ensureJSZip();
     try {
         const r = await fetch(jarPath);
         if (!r.ok) throw new Error('HTTP '+r.status);
         const buf = await r.arrayBuffer();
-        const zip = await JSZip.loadAsync(buf);
+        const zip = await _JSZip.loadAsync(buf);
 
         // 1) icon.png
         let name = Object.keys(zip.files).find(n=>n.toLowerCase()==='icon.png');
@@ -555,7 +568,7 @@ async function init() {
                             console.log(`Main: Декодировано ${jarData.byteLength} байт из localStorage`);
                         } else {
                             console.log(`Main: Загружаем ${jarName} через fetch...`);
-                            const r = await fetch("./games/" + jarName);
+                            const r = await fetch("./games/" + encodeURIComponent(jarName));
                             if (!r.ok) throw new Error(`HTTP ${r.status}`);
                             jarData = await r.arrayBuffer();
                             console.log(`Main: Загружено ${jarData.byteLength} байт`);

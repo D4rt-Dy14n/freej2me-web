@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title>FreeJ2ME - Game Manager</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="./lib/jszip.min.js"></script>
 
     <style>
         * {
@@ -713,7 +713,7 @@
                     if (!game || !game.data) return null;
                     jarData = Uint8Array.from(atob(game.data), c => c.charCodeAt(0)).buffer;
                 } else {
-                    const resp = await fetch(`./games/${filename}`);
+                    const resp = await fetch(`./games/${encodeURIComponent(filename)}`);
                     if (!resp.ok) return null;
                     jarData = await resp.arrayBuffer();
                 }
