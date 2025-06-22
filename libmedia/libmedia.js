@@ -183,6 +183,17 @@ export class MediaPlayer extends EventTarget {
                 this.sourceNode.connect(this.gainNode);
             }
 
+            // Safari: после load() старый MediaElementSourceNode перестаёт выводить звук.
+            if (this.sourceNode && this.audioContext && typeof this.audioContext.createMediaElementSource === 'function') {
+                try {
+                    this.sourceNode.disconnect();
+                    this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
+                    this.sourceNode.connect(this.gainNode ?? this.destination);
+                } catch(e) {
+                    console.warn('MediaPlayer: recreate sourceNode failed', e);
+                }
+            }
+
             this.state = 'REALIZED';
             return result;
         });
@@ -257,11 +268,17 @@ export class MediaPlayer extends EventTarget {
                 // Останавливаем без генерации событий, затем ставим на начало
                 this.mediaElement.pause();
                 this.mediaElement.currentTime = 0;
+                // Полностью перезагружаем поток, чтобы браузер гарантированно заново декодировал звук
+                // (на некоторых мобильных браузерах без load() второй play игнорируется)
+                this.mediaElement.load();
             }
         } catch (_) {
             // duration может быть NaN до полной загрузки; игнорируем
             this.mediaElement.currentTime = 0;
         }
+
+        // Убеждаемся, что AudioContext активен (после блокировки браузером мог уйти в suspended)
+        try { if (this.audioContext.state === 'suspended') await this.audioContext.resume(); } catch(e) {}
 
         try {
             await this.mediaElement.play();
