@@ -2,7 +2,7 @@ import { LibMedia } from "../libmedia/libmedia.js";
 import { LibMidi, createUnlockingAudioContext } from "../libmidi/libmidi.js";
 import { EventQueue } from "./eventqueue.js";
 import { initKbdListeners, setKbdHandler, kbdWidth, kbdHeight } from "./screenKbd.js";
-import JSZip from "../libjs/jszip.min.js";
+import JSZip from "../lib/jszip.min.js";
 
 // we need to import natives here, don't use System.loadLibrary
 // since CheerpJ fails to load them in firefox and we can't set breakpoints
@@ -241,60 +241,48 @@ function setListeners() {
     setKbdHandler(window.handleVirtualKey);
 }
 
-// Helper: установим favicon из буфера PNG
 function setFaviconFromBuffer(arrayBuffer) {
     const blob = new Blob([arrayBuffer], { type: 'image/png' });
 
     const reader = new FileReader();
     reader.onload = function() {
         const dataURL = reader.result;
-
-        // сохраняем, чтобы run.html мог установить до загрузки JS
+        // сохраняем для run.html
         sessionStorage.setItem('currentGameIcon', dataURL);
-
-        let link = document.querySelector("link[rel*='icon']");
-        if (!link) {
-            link = document.createElement('link');
-            link.setAttribute('rel', 'icon');
-            document.head.appendChild(link);
-        }
-        link.setAttribute('href', dataURL);
     };
     reader.readAsDataURL(blob);
 }
 
-// Fallback: извлечь icon.png из jar
+// Fallback: извлечь PNG-иконку из JAR
 async function fallbackExtractIcon(jarPath) {
     try {
-        console.log('Icon fallback: fetching', jarPath);
         const r = await fetch(jarPath);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        if (!r.ok) throw new Error('HTTP '+r.status);
         const buf = await r.arrayBuffer();
         const zip = await JSZip.loadAsync(buf);
 
-        // 1) icon.png в корне
-        let entryName = Object.keys(zip.files).find(n => n.toLowerCase() === 'icon.png');
+        // 1) icon.png
+        let name = Object.keys(zip.files).find(n=>n.toLowerCase()==='icon.png');
 
-        // 2) MIDlet-Icon в манифесте
-        if (!entryName && zip.file('META-INF/MANIFEST.MF')) {
+        // 2) MIDlet-Icon
+        if (!name && zip.file('META-INF/MANIFEST.MF')) {
             const mf = await zip.file('META-INF/MANIFEST.MF').async('string');
-            const matchIcon = mf.match(/^MIDlet-Icon:\s*(.+)$/m);
-            if (matchIcon) entryName = matchIcon[1].trim();
-            if (!entryName) {
-                const match1 = mf.match(/^MIDlet-1:\s*[^,]*,\s*([^,]+\.png)/m);
-                if (match1) entryName = match1[1].trim();
+            const mIcon = mf.match(/^MIDlet-Icon:\s*(.+)$/m);
+            if (mIcon) name = mIcon[1].trim();
+
+            // 3) MIDlet-1, вторая часть
+            if (!name) {
+                const m1 = mf.match(/^MIDlet-1:\s*[^,]*,\s*([^,]+\.png)/m);
+                if (m1) name = m1[1].trim();
             }
         }
 
-        if (entryName && zip.file(entryName)) {
-            console.log('Icon fallback: found', entryName);
-            const imgBuf = await zip.file(entryName).async('arraybuffer');
-            setFaviconFromBuffer(imgBuf);
-        } else {
-            console.warn('Icon fallback: no PNG found');
+        if (name && zip.file(name)) {
+            const img = await zip.file(name).async('arraybuffer');
+            setFaviconFromBuffer(img);
         }
-    } catch (e) {
-        console.warn('Icon fallback error', e);
+    } catch(e) {
+        console.warn('fallbackExtractIcon error', e);
     }
 }
 
@@ -512,11 +500,10 @@ async function init() {
     } else {
         // Используем LauncherUtil для инициализации JAR как приложения
         const jarName = sp.get('jar') || "game.jar";
-        const appId = jarName.replace('.jar', '');
         window.currentJarName = jarName;
         window.currentJarPath = sp.get('jar') ? "./games/"+jarName : "/files/"+jarName;
         
-        console.log(`Main: Инициализируем JAR ${jarName} как app ${appId} через LauncherUtil...`);
+        console.log(`Main: Инициализируем JAR ${jarName} как app ${jarName} через LauncherUtil...`);
         
         try {
             const LauncherUtil = await lib.pl.zb3.freej2me.launcher.LauncherUtil;
@@ -526,7 +513,7 @@ async function init() {
             const Files = await lib.java.nio.file.Files;
             const Paths = await lib.java.nio.file.Paths;
             
-            const appDir = "/files/" + appId;
+            const appDir = "/files/" + jarName;
             const appDirPath = await Paths.get(appDir);
             const appExists = await Files.exists(appDirPath);
             console.log(`Main: Проверяем существование: ${appDir} = ${appExists}`);
@@ -593,7 +580,7 @@ async function init() {
                 
                 // Удаляем старые настройки если есть, чтобы убрать поле fps
                 try {
-                    const oldSettingsPath = `/files/${appId}/config/settings.conf`;
+                    const oldSettingsPath = `/files/${jarName}/config/settings.conf`;
                     const settingsFilePath = await Paths.get(oldSettingsPath);
                     await Files.deleteIfExists(settingsFilePath);
                     console.log("Main: Удалили старые настройки");
@@ -601,7 +588,7 @@ async function init() {
                     console.log("Main: Старые настройки отсутствуют");
                 }
                 
-                await saveDefaultSettings(appId, lib, LauncherUtil);
+                await saveDefaultSettings(jarName, lib, LauncherUtil);
             }
             
             // Выбор режима запуска после всех операций
