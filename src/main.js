@@ -2,7 +2,8 @@ import { LibMedia } from "../libmedia/libmedia.js";
 import { LibMidi, createUnlockingAudioContext } from "../libmidi/libmidi.js";
 import { EventQueue } from "./eventqueue.js";
 import { initKbdListeners, setKbdHandler, kbdWidth, kbdHeight } from "./screenKbd.js";
-import JSZip from "../lib/jszip.min.js";
+import * as JSZip_Namespace from "../lib/jszip.min.js";
+const JSZip = JSZip_Namespace.default || JSZip_Namespace;
 
 // we need to import natives here, don't use System.loadLibrary
 // since CheerpJ fails to load them in firefox and we can't set breakpoints
