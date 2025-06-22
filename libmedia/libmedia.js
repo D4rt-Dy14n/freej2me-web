@@ -195,6 +195,7 @@ export class MediaPlayer extends EventTarget {
             }
 
             this.state = 'REALIZED';
+            this._ensureEventLogs();
             return result;
         });
     }
@@ -259,6 +260,15 @@ export class MediaPlayer extends EventTarget {
 
         const elementInfo = this.mediaElement.src?.substring(0, 50) + '...';
 
+        console.log('[MediaPlayer.play] begin', {
+            id: this.playerId,
+            elementInfo,
+            paused: this.mediaElement.paused,
+            readyState: this.mediaElement.readyState,
+            currentTime: this.mediaElement.currentTime.toFixed(3),
+            duration: this.mediaElement.duration
+        });
+
         // Если элемент уже проигрывается ‑ перезапускаем.
         // Если закончился и стоит на конце — тоже сбрасываем.
         try {
@@ -271,6 +281,9 @@ export class MediaPlayer extends EventTarget {
                 // Полностью перезагружаем поток, чтобы браузер гарантированно заново декодировал звук
                 // (на некоторых мобильных браузерах без load() второй play игнорируется)
                 this.mediaElement.load();
+                console.log('[MediaPlayer.play] reset & load complete', {
+                    readyState: this.mediaElement.readyState
+                });
             }
         } catch (_) {
             // duration может быть NaN до полной загрузки; игнорируем
@@ -278,11 +291,15 @@ export class MediaPlayer extends EventTarget {
         }
 
         // Убеждаемся, что AudioContext активен (после блокировки браузером мог уйти в suspended)
+        console.log('[MediaPlayer.play] AC state before', this.audioContext.state);
         try { if (this.audioContext.state === 'suspended') await this.audioContext.resume(); } catch(e) {}
+        console.log('[MediaPlayer.play] AC state after', this.audioContext.state);
 
         try {
             await this.mediaElement.play();
+            console.log('[MediaPlayer.play] play() success');
         } catch (e) {
+            console.warn('[MediaPlayer.play] play() failed', e.name, e.message);
             if (e.name === 'NotAllowedError') {
                 // Пробуем проиграть без звука
                 const originalVolume = this.mediaElement.volume;
@@ -415,6 +432,15 @@ export class MediaPlayer extends EventTarget {
                 0.9
             );
         });
+    }
+
+    // Добавляем базовые логи на события ended/error (один раз)
+    _ensureEventLogs() {
+        if (this._eventsLogged) return;
+        this._eventsLogged = true;
+        if (!this.mediaElement) return;
+        this.mediaElement.addEventListener('ended', () => console.log('[MediaPlayer] ended', this.playerId));
+        this.mediaElement.addEventListener('error', (e) => console.error('[MediaPlayer] error', e));
     }
 }
 
