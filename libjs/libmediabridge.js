@@ -1,12 +1,15 @@
 // this needs to be run on the main thread
 // assuming window.libmedia has the instance and contexte
 export default {
-    async Java_pl_zb3_freej2me_bridge_media_MediaBridge_createPlayer(lib) {
+    async Java_pl_zb3_freej2me_bridge_media_MediaBridge_createMediaPlayer(lib) {
         const player = window.libmedia.createMediaPlayer();
         player.addEventListener('end-of-media', () => {
             window.emulator.call('pl/zb3/freej2me/bridge/media/MediaBridge', 'playerEndOfMedia', [player]);
         });
         return player;
+    },
+    async Java_pl_zb3_freej2me_bridge_media_MediaBridge_createPlayer(lib) {
+        return this.Java_pl_zb3_freej2me_bridge_media_MediaBridge_createMediaPlayer(lib);
     },
     async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerLoad(lib, player, contentType, data) {
         const res = await player.load(contentType, data.buffer);

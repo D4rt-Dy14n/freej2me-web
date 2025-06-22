@@ -380,13 +380,9 @@ async function init() {
                 
                 try {
                     // Добавляем таймауты для всех Java вызовов
-                    const processEventWithTimeout = async (eventProcessor, timeoutMs = 100) => {
-                        return Promise.race([
-                            eventProcessor(),
-                            new Promise((_, reject) => 
-                                setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-                            )
-                        ]);
+                    const processEventWithTimeout = async (eventProcessor) => {
+                        // Выполняем обработчик без ограничений по времени
+                        return eventProcessor();
                     };
 
                     if (evt.kind == 'keydown') {
@@ -521,13 +517,17 @@ async function init() {
 
                         // Пишем во /str/<jarName>
                         const tempPath = "/str/" + jarName;
-                        await cheerpOSAddStringFile(tempPath, new Uint8Array(jarData));
+                        await addFileToStrMount(tempPath, new Uint8Array(jarData));
                         console.log(`Main: Файл записан во временный ${tempPath}`);
 
-                        // Копируем в /files/<jarName>
+                        // Копируем в /files/<jarName>, предварительно убирая старую версию
                         const destPath = "/files/" + jarName;
-                        await Files.copy(await Paths.get(tempPath), await Paths.get(destPath));
+                        const destPathObj = await Paths.get(destPath);
+                        try { await Files.deleteIfExists(destPathObj); } catch(e) {}
+                        await Files.copy(await Paths.get(tempPath), destPathObj);
                         console.log(`Main: Файл скопирован в ${destPath}`);
+                        // Чистим временный файл
+                        try { await Files.deleteIfExists(await Paths.get(tempPath)); } catch(e) {}
 
                         if (await Files.exists(await Paths.get(destPath))) {
                             const size = await Files.size(await Paths.get(destPath));
@@ -761,6 +761,32 @@ async function saveUpdatedSettings(appId, settingsMap) {
     } catch (error) {
         console.error(`Main: Ошибка сохранения обновленных настроек для ${appId}:`, error);
         throw error;
+    }
+}
+
+// === CheerpJ FS helpers ===
+// Безопасно добавляет файл в /str/, дожидаясь инициализации файловой системы
+async function addFileToStrMount(path, uint8Arr, maxWaitMs = 5000) {
+    const start = performance.now();
+
+    // Ждём, пока смонтируется /str/
+    while (!self.cheerpjGetFSMountForPath || !cheerpjGetFSMountForPath('/str/') ) {
+        if (performance.now() - start > maxWaitMs) {
+            throw new Error('CheerpJ FS /str/ mount not ready');
+        }
+        await new Promise(r => setTimeout(r, 50));
+    }
+
+    // Пытаемся сохранить файл; при сбое дадим ещё пару попыток
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            cheerpOSAddStringFile(path, uint8Arr);
+            return;
+        } catch (e) {
+            if (attempt === 2) throw e;
+            console.warn('addFileToStrMount retry after error:', e.message);
+            await new Promise(r => setTimeout(r, 100));
+        }
     }
 }
 
