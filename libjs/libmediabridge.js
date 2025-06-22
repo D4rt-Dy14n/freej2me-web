@@ -62,4 +62,10 @@ export default {
         const buffer = await player.getSnapshot(type);
         return buffer ? new Int8Array(buffer) : null;
     },
+    async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerSetLooping(lib, player, loop) {
+        player.setLooping(loop);
+    },
+    async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerGetDuration(lib, player) {
+        return player.duration ?? -1;
+    },
 }
