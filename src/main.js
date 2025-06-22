@@ -249,6 +249,14 @@ function setFaviconFromBuffer(arrayBuffer) {
         const dataURL = reader.result;
         // сохраняем для run.html
         sessionStorage.setItem('currentGameIcon', dataURL);
+
+        let link = document.querySelector("link[rel*='icon']");
+        if (!link) {
+            link = document.createElement('link');
+            link.setAttribute('rel', 'icon');
+            document.head.appendChild(link);
+        }
+        link.setAttribute('href', dataURL);
     };
     reader.readAsDataURL(blob);
 }
@@ -500,10 +508,11 @@ async function init() {
     } else {
         // Используем LauncherUtil для инициализации JAR как приложения
         const jarName = sp.get('jar') || "game.jar";
+        const appId = jarName.replace(/\.jar$/i, ''); // id без расширения
+
         window.currentJarName = jarName;
         window.currentJarPath = sp.get('jar') ? "./games/"+jarName : "/files/"+jarName;
-        
-        console.log(`Main: Инициализируем JAR ${jarName} как app ${jarName} через LauncherUtil...`);
+        console.log(`Main: Инициализируем JAR ${jarName} как app ${appId} через LauncherUtil...`);
         
         try {
             const LauncherUtil = await lib.pl.zb3.freej2me.launcher.LauncherUtil;
@@ -513,7 +522,7 @@ async function init() {
             const Files = await lib.java.nio.file.Files;
             const Paths = await lib.java.nio.file.Paths;
             
-            const appDir = "/files/" + jarName;
+            const appDir = "/files/" + appId;
             const appDirPath = await Paths.get(appDir);
             const appExists = await Files.exists(appDirPath);
             console.log(`Main: Проверяем существование: ${appDir} = ${appExists}`);
@@ -580,7 +589,7 @@ async function init() {
                 
                 // Удаляем старые настройки если есть, чтобы убрать поле fps
                 try {
-                    const oldSettingsPath = `/files/${jarName}/config/settings.conf`;
+                    const oldSettingsPath = `/files/${appId}/config/settings.conf`;
                     const settingsFilePath = await Paths.get(oldSettingsPath);
                     await Files.deleteIfExists(settingsFilePath);
                     console.log("Main: Удалили старые настройки");
@@ -588,11 +597,11 @@ async function init() {
                     console.log("Main: Старые настройки отсутствуют");
                 }
                 
-                await saveDefaultSettings(jarName, lib, LauncherUtil);
+                await saveDefaultSettings(appId, lib, LauncherUtil);
             }
             
             // Выбор режима запуска после всех операций
-            args = ['jar', '/files/' + jarName];
+            args = ['jar', '/files/' + jarName]; // путь с .jar сохраняем для запускa
             
         } catch (error) {
             console.error("Main: Ошибка LauncherUtil, fallback to jar:", error);
