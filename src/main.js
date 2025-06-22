@@ -525,8 +525,13 @@ async function init() {
             
             const appDir = "/files/" + appId;
             const appDirPath = await Paths.get(appDir);
-            const appExists = await Files.exists(appDirPath);
-            console.log(`Main: Проверяем существование: ${appDir} = ${appExists}`);
+
+            const jarPath = "/files/" + jarName;
+            const jarPathObj = await Paths.get(jarPath);
+
+            // Считаем приложение существующим, если есть либо директория /files/appId, либо сам JAR.
+            const appExists = (await Files.exists(appDirPath)) || (await Files.exists(jarPathObj));
+            console.log(`Main: Проверяем существование: dir=${await Files.exists(appDirPath)} jar=${await Files.exists(jarPathObj)} → appExists=${appExists}`);
             let initSuccess = false;
             
             if (!appExists) {
@@ -561,12 +566,16 @@ async function init() {
                         await addFileToStrMount(tempPath, new Uint8Array(jarData));
                         console.log(`Main: Файл записан во временный ${tempPath}`);
 
-                        // Копируем в /files/<jarName>, предварительно убирая старую версию
+                        // Копируем в /files/<jarName>, предварительно убирая старую версию (копируем только если нет)
                         const destPath = "/files/" + jarName;
                         const destPathObj = await Paths.get(destPath);
-                        try { await Files.deleteIfExists(destPathObj); } catch(e) {}
-                        await Files.copy(await Paths.get(tempPath), destPathObj);
-                        console.log(`Main: Файл скопирован в ${destPath}`);
+                        if (!(await Files.exists(destPathObj))) {
+                            try { await Files.deleteIfExists(destPathObj); } catch(e) {}
+                            await Files.copy(await Paths.get(tempPath), destPathObj);
+                            console.log(`Main: Файл скопирован в ${destPath}`);
+                        } else {
+                            console.log(`Main: JAR уже существует, пропускаем копирование`);
+                        }
                         // Чистим временный файл
                         try { await Files.deleteIfExists(await Paths.get(tempPath)); } catch(e) {}
 
