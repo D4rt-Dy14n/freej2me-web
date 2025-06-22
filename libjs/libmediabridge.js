@@ -16,12 +16,15 @@ export default {
         return res;
     },
     async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerPlay(lib, player) {
+        console.log('[MB] playerPlay', {id: player?.playerId, ts: Date.now()});
         await player.play();
     },
     async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerPause(lib, player) {
+        console.log('[MB] playerPause', {id: player?.playerId, ts: Date.now()});
         player.pause();
     },
     async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerStop(lib, player) {
+        console.log('[MB] playerStop', {id: player?.playerId, ts: Date.now()});
         player.stop();
     },
     async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerGetPosition(lib, player) {
