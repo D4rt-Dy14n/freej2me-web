@@ -248,8 +248,18 @@ export class MediaPlayer extends EventTarget {
 
         const elementInfo = this.mediaElement.src?.substring(0, 50) + '...';
 
-        if (!this.mediaElement.paused) {
-            // Звук уже играет, перезапускаем
+        // Если элемент уже проигрывается ‑ перезапускаем.
+        // Если закончился и стоит на конце — тоже сбрасываем.
+        try {
+            const atEnd = this.mediaElement.currentTime >= (this.mediaElement.duration || 0) - 0.01;
+
+            if (!this.mediaElement.paused || atEnd) {
+                // Останавливаем без генерации событий, затем ставим на начало
+                this.mediaElement.pause();
+                this.mediaElement.currentTime = 0;
+            }
+        } catch (_) {
+            // duration может быть NaN до полной загрузки; игнорируем
             this.mediaElement.currentTime = 0;
         }
 
