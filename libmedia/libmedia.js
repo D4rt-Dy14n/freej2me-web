@@ -558,7 +558,7 @@ export class MediaPlayer extends EventTarget {
 
     // Вспомогательный метод для очистки обработчиков reset
     _cleanupResetHandlers() {
-        if (this._pendingRecreateHandler) {
+        if (this._pendingRecreateHandler && this.mediaElement) {
             this.mediaElement.removeEventListener('loadeddata', this._pendingRecreateHandler);
             this.mediaElement.removeEventListener('error', this._pendingRecreateHandler);
             this._pendingRecreateHandler = null;
