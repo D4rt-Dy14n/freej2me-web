@@ -17,7 +17,10 @@ export class LibMedia {
     }
 
     createMediaPlayer() {
-        return new MediaPlayer(this.context, this.destination);
+        console.log('🎵 LibMedia: Создаем новый MediaPlayer');
+        const player = new MediaPlayer(this.context, this.destination);
+        console.log('🎵 LibMedia: MediaPlayer создан, ID:', player.playerId);
+        return player;
     }
 
 }
@@ -119,7 +122,10 @@ export class MediaPlayer extends EventTarget {
     }
 
     async load(contentType, buffer) {
+        this.contentType = contentType;
+        console.log('🎵 MediaPlayer[' + this.playerId + ']: load() вызван, contentType:', contentType, 'bufferSize:', buffer?.byteLength);
         if (!buffer || buffer.byteLength === 0) {
+            console.log('🎵 MediaPlayer[' + this.playerId + ']: load() - пустой буфер');
             return false;
         }
 
@@ -169,6 +175,7 @@ export class MediaPlayer extends EventTarget {
             this.mediaElement.src = this.objectUrl;
             this.mediaElement.load();
         }).then(result => {
+            console.log('🎵 MediaPlayer[' + this.playerId + ']: load() результат:', result);
             if (!result) {
                 return false;
             }
@@ -181,9 +188,11 @@ export class MediaPlayer extends EventTarget {
 
                 this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
                 this.sourceNode.connect(this.gainNode);
+                console.log('🎵 MediaPlayer[' + this.playerId + ']: Audio context настроен');
             }
 
             this.state = 'REALIZED';
+            console.log('🎵 MediaPlayer[' + this.playerId + ']: Состояние установлено в REALIZED');
             return result;
         });
     }
@@ -242,7 +251,9 @@ export class MediaPlayer extends EventTarget {
     }
 
     async play() {
+        console.log('🎵 MediaPlayer[' + this.playerId + ']: play() вызван, state:', this.state);
         if (!this.mediaElement) {
+            console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - нет mediaElement');
             return;
         }
 
@@ -250,12 +261,16 @@ export class MediaPlayer extends EventTarget {
 
         if (!this.mediaElement.paused) {
             // Звук уже играет, перезапускаем
+            console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - перезапуск, currentTime сброшен в 0');
             this.mediaElement.currentTime = 0;
         }
 
         try {
+            console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - вызываем mediaElement.play()');
             await this.mediaElement.play();
+            console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - mediaElement.play() успешно');
         } catch (e) {
+            console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - ошибка:', e.name, e.message);
             if (e.name === 'NotAllowedError') {
                 // Пробуем проиграть без звука
                 const originalVolume = this.mediaElement.volume;
@@ -264,8 +279,9 @@ export class MediaPlayer extends EventTarget {
 
                 try {
                     await this.mediaElement.play();
+                    console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - воспроизведение без звука успешно');
                 } catch (e) {
-                    // Даже без звука не получилось
+                    console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - даже без звука не получилось');
                 }
 
                 this.mediaElement.volume = originalVolume;
@@ -275,15 +291,20 @@ export class MediaPlayer extends EventTarget {
     }
 
     pause() {
+        console.log('🎵 MediaPlayer[' + this.playerId + ']: pause() вызван');
         if (this.mediaElement) {
             this.mediaElement.pause();
         }
     }
 
     stop() {
+        console.log('🎵 MediaPlayer[' + this.playerId + ']: stop() вызван');
         if (this.mediaElement) {
             this.mediaElement.pause();
             this.mediaElement.currentTime = 0;
+            // Принудительно перезагружаем медиа для подготовки к повторному воспроизведению
+            // Это критично для некоторых браузеров, особенно мобильных
+            this.mediaElement.load();
         }
     }
 
@@ -388,6 +409,55 @@ export class MediaPlayer extends EventTarget {
                 0.9
             );
         });
+    }
+
+    // Сброс mediaElement c пересозданием ObjectURL
+    reset() {
+        if (!this.mediaElement) return;
+
+        if (!this.blob) {
+            // Нет данных — переводим в UNREALIZED
+            this.mediaElement.pause();
+            if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+            this.mediaElement.removeAttribute('src');
+            this.mediaElement.load();
+            this.state = 'UNREALIZED';
+            return;
+        }
+
+        // Остановка и подготовка
+        this.mediaElement.pause();
+        this.mediaElement.currentTime = 0;
+
+        if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+        this.objectUrl = URL.createObjectURL(this.blob);
+        this.mediaElement.src = this.objectUrl;
+
+        // Safari требует пересоздания sourceNode после load()
+        const recreateSourceNode = () => {
+            if (!this.audioContext || this.audioContext.state === 'closed') return;
+
+            try {
+                if (this.sourceNode) this.sourceNode.disconnect();
+
+                if (!this.gainNode) {
+                    this.gainNode = this.audioContext.createGain();
+                    this.gainNode.gain.value = 1.0;
+                    this.gainNode.connect(this.destination ?? this.audioContext.destination);
+                }
+
+                this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
+                this.sourceNode.connect(this.gainNode ?? this.destination ?? this.audioContext.destination);
+            } catch (e) {
+                console.warn('MediaPlayer.reset: recreate sourceNode failed', e);
+            }
+        };
+
+        this.mediaElement.addEventListener('loadeddata', recreateSourceNode, { once: true });
+
+        this.mediaElement.load();
+
+        this.state = 'PREFETCHED';
     }
 }
 
