@@ -617,8 +617,13 @@ async function init() {
                 await saveDefaultSettings(appId, lib, LauncherUtil);
             }
             
-            // Выбор режима запуска после всех операций
-            args = ['jar', '/files/' + jarName]; // путь с .jar сохраняем для запускa
+            // Выбор режима запуска: если JAR скопирован успешно, запускаем через app режим
+            if (initSuccess || appExists) {
+                args = ['app', appId]; // app режим - Java сам найдёт JAR в каталоге приложения
+            } else {
+                // fallback: пробуем jar режим с оригинальным путём
+                args = ['jar', './games/' + jarName];
+            }
             
         } catch (error) {
             console.error("Main: Ошибка LauncherUtil, fallback to jar:", error);
@@ -644,6 +649,11 @@ async function init() {
     } catch (error) {
         console.error("Main: Ошибка инициализации:", error);
         document.getElementById('loading').textContent = 'Ошибка инициализации: ' + error.message;
+    }
+
+    // Логируем иконки для отладки
+    if (window.currentJarPath) {
+        logIconDebug(window.currentJarPath);
     }
 }
 
@@ -844,6 +854,40 @@ async function addFileToStrMount(path, uint8Arr, maxWaitMs = 5000) {
             console.warn('addFileToStrMount retry after error:', e.message);
             await new Promise(r => setTimeout(r, 100));
         }
+    }
+}
+
+// Логирование для отладки иконок
+async function logIconDebug(jarPath) {
+    try {
+        console.log(`[ICON DEBUG] Processing: ${jarPath}`);
+        const _JSZip = await ensureJSZip();
+        const r = await fetch(jarPath);
+        if (!r.ok) {
+            console.log(`[ICON DEBUG] Fetch failed: HTTP ${r.status}`);
+            return;
+        }
+        const buf = await r.arrayBuffer();
+        const zip = await _JSZip.loadAsync(buf);
+        
+        // Проверяем все возможные файлы иконок
+        const iconFiles = Object.keys(zip.files).filter(name => 
+            name.toLowerCase().endsWith('.png') || name.toLowerCase().endsWith('.jpg')
+        );
+        
+        console.log(`[ICON DEBUG] Available image files:`, iconFiles);
+        
+        // Проверяем MANIFEST
+        const manifest = zip.file('META-INF/MANIFEST.MF');
+        if (manifest) {
+            const manifestText = await manifest.async('text');
+            console.log(`[ICON DEBUG] MANIFEST.MF content:`, manifestText);
+        } else {
+            console.log(`[ICON DEBUG] No MANIFEST.MF found`);
+        }
+        
+    } catch (e) {
+        console.log(`[ICON DEBUG] Error processing ${jarPath}:`, e);
     }
 }
 
