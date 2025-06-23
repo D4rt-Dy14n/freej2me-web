@@ -104,10 +104,6 @@ export class MediaPlayer extends EventTarget {
 
         this.addEventListener('ended', () => {
             this.state = 'PREFETCHED';
-            // Сбрасываем позицию на начало чтобы следующий play() работал корректно
-            if (this.mediaElement && !this.mediaElement.loop) {
-                this.mediaElement.currentTime = 0;
-            }
             this.dispatchEvent(new Event('end-of-media'));
         });
 
@@ -332,6 +328,9 @@ export class MediaPlayer extends EventTarget {
         if (this.mediaElement) {
             this.mediaElement.pause();
             this.mediaElement.currentTime = 0;
+            // Принудительно перезагружаем медиа для подготовки к повторному воспроизведению
+            // Это критично для некоторых браузеров, особенно мобильных
+            this.mediaElement.load();
         }
     }
 
