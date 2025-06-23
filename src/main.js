@@ -617,8 +617,35 @@ async function init() {
                 await saveDefaultSettings(appId, lib, LauncherUtil);
             }
             
-            // Выбор режима запуска: всегда используем jar режим с путём к скопированному файлу
-            args = ['jar', '/files/' + jarName];
+            // Выбор режима запуска - всегда jar режим из /files/
+            if (initSuccess || appExists) {
+                // Если копирование успешно или файл уже существует - используем JAR из /files/
+                args = ['jar', '/files/' + jarName];
+                console.log("Main: Используем JAR из /files/");
+            } else {
+                // Файл не скопирован - копируем из ./games/ в /files/
+                console.log("Main: Копируем JAR из ./games/ в /files/...");
+                try {
+                    const gameJarResponse = await fetch('./games/' + encodeURIComponent(jarName));
+                    if (!gameJarResponse.ok) {
+                        throw new Error(`HTTP ${gameJarResponse.status}`);
+                    }
+                    
+                    const gameJarData = await gameJarResponse.arrayBuffer();
+                    const gameJarBytes = new Uint8Array(gameJarData);
+                    
+                    await addFileToStrMount('/files/' + jarName, gameJarBytes);
+                    console.log("Main: JAR успешно скопирован в /files/");
+                    
+                    // Используем скопированный файл
+                    args = ['jar', '/files/' + jarName];
+                } catch (copyError) {
+                    console.error("Main: Ошибка копирования JAR:", copyError);
+                    // Fallback к оригинальному пути
+                    args = ['jar', './games/' + jarName];
+                    console.log("Main: Fallback к оригинальному JAR из ./games/");
+                }
+            }
             
         } catch (error) {
             console.error("Main: Ошибка LauncherUtil, fallback to jar:", error);
