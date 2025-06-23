@@ -702,9 +702,13 @@
         // Извлечение icon.png из JAR (ZIP) с кешированием в localStorage
         async function extractIconFromJar(filename, isUploaded = false) {
             try {
+                console.log(`[ICON DEBUG] Processing: ${filename}, isUploaded: ${isUploaded}`);
                 const cacheKey = `gameIcon_${filename}`;
                 const cached = localStorage.getItem(cacheKey);
-                if (cached) return cached;
+                if (cached) {
+                    console.log(`[ICON DEBUG] Using cached icon for ${filename}`);
+                    return cached;
+                }
 
                 let jarData;
                 if (isUploaded) {
@@ -719,12 +723,71 @@
                 }
 
                 const zip = await JSZip.loadAsync(jarData);
+                
+                // Логируем все файлы в архиве
+                const allFiles = Object.keys(zip.files);
+                const imageFiles = allFiles.filter(name => 
+                    name.toLowerCase().endsWith('.png') || name.toLowerCase().endsWith('.jpg')
+                );
+                console.log(`[ICON DEBUG] All files in ${filename}:`, allFiles.slice(0, 10), '...');
+                console.log(`[ICON DEBUG] Image files in ${filename}:`, imageFiles);
+                
+                // Проверяем MANIFEST для MIDlet-Icon
+                const manifest = zip.file('META-INF/MANIFEST.MF');
+                if (manifest) {
+                    const manifestText = await manifest.async('text');
+                    console.log(`[ICON DEBUG] MANIFEST.MF content for ${filename}:`, manifestText);
+                    
+                    // Ищем MIDlet-Icon
+                    const iconMatch = manifestText.match(/MIDlet-Icon:\s*([^\r\n]+)/i);
+                    if (iconMatch) {
+                        const iconPath = iconMatch[1].trim();
+                        console.log(`[ICON DEBUG] Found MIDlet-Icon: ${iconPath}`);
+                        const midletIcon = zip.file(iconPath);
+                        if (midletIcon) {
+                            const iconBase64 = await midletIcon.async('base64');
+                            const url = `data:image/png;base64,${iconBase64}`;
+                            localStorage.setItem(cacheKey, url);
+                            console.log(`[ICON DEBUG] Successfully extracted MIDlet-Icon for ${filename}`);
+                            return url;
+                        }
+                    }
+                    
+                    // Ищем в MIDlet-1 любой .png файл
+                    const midlet1Match = manifestText.match(/MIDlet-1:\s*([^\r\n]+)/i);
+                    if (midlet1Match) {
+                        const midlet1Line = midlet1Match[1];
+                        console.log(`[ICON DEBUG] MIDlet-1 line: ${midlet1Line}`);
+                        // Ищем .png в строке MIDlet-1
+                        const pngMatch = midlet1Line.match(/([^,\s]+\.png)/i);
+                        if (pngMatch) {
+                            const pngPath = pngMatch[1];
+                            console.log(`[ICON DEBUG] Found PNG in MIDlet-1: ${pngPath}`);
+                            const pngIcon = zip.file(pngPath);
+                            if (pngIcon) {
+                                const iconBase64 = await pngIcon.async('base64');
+                                const url = `data:image/png;base64,${iconBase64}`;
+                                localStorage.setItem(cacheKey, url);
+                                console.log(`[ICON DEBUG] Successfully extracted PNG from MIDlet-1 for ${filename}`);
+                                return url;
+                            }
+                        }
+                    }
+                }
+                
+                // Fallback: ищем icon.png в корне
                 const iconFile = zip.file('icon.png');
-                if (!iconFile) return null;
-                const iconBase64 = await iconFile.async('base64');
-                const url = `data:image/png;base64,${iconBase64}`;
-                localStorage.setItem(cacheKey, url);
-                return url;
+                if (iconFile) {
+                    console.log(`[ICON DEBUG] Found icon.png in root for ${filename}`);
+                    const iconBase64 = await iconFile.async('base64');
+                    const url = `data:image/png;base64,${iconBase64}`;
+                    localStorage.setItem(cacheKey, url);
+                    console.log(`[ICON DEBUG] Successfully extracted icon.png for ${filename}`);
+                    return url;
+                }
+                
+                console.log(`[ICON DEBUG] No icon found for ${filename}`);
+                return null;
             } catch (e) {
                 console.warn('extractIconFromJar failed', e);
                 return null;
