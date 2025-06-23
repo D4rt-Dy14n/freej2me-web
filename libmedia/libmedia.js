@@ -455,7 +455,10 @@ export class MediaPlayer extends EventTarget {
 
     // Сбрасывает mediaElement в рабочее состояние, создав новый ObjectURL
     reset() {
-        if (!this.mediaElement) return;
+        if (!this.mediaElement) return Promise.resolve();
+
+        // Очищаем флаг завершения при любом сбросе
+        this.hasEndedOnce = false;
 
         // Если данных нет – переводим в UNREALIZED
         if (!this.blob) {
@@ -465,7 +468,7 @@ export class MediaPlayer extends EventTarget {
             this.mediaElement.removeAttribute('src');
             this.mediaElement.load();
             this.state = 'UNREALIZED';
-            return;
+            return Promise.resolve();
         }
 
         // Останавливаем текущее воспроизведение и обнуляем время
@@ -483,37 +486,42 @@ export class MediaPlayer extends EventTarget {
             this._pendingRecreateHandler = null;
         }
 
-        this._pendingRecreateHandler = () => {
-            if (!this.audioContext || this.audioContext.state === 'closed') {
-                this._pendingRecreateHandler = null;
-                return;
-            }
-
-            try {
-                if (this.sourceNode) this.sourceNode.disconnect();
-
-                if (!this.gainNode) {
-                    this.gainNode = this.audioContext.createGain();
-                    this.gainNode.gain.value = 1.0;
-                    this.gainNode.connect(this.destination ?? this.audioContext.destination);
+        // Возвращаем Promise который разрешается когда reset завершён
+        return new Promise((resolve) => {
+            this._pendingRecreateHandler = () => {
+                if (!this.audioContext || this.audioContext.state === 'closed') {
+                    this._pendingRecreateHandler = null;
+                    resolve();
+                    return;
                 }
 
-                this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
-                this.sourceNode.connect(this.gainNode ?? this.destination ?? this.audioContext.destination);
-            } catch (e) {
-                console.warn('MediaPlayer.reset: recreate sourceNode failed', e);
-            }
+                try {
+                    if (this.sourceNode) this.sourceNode.disconnect();
 
-            // handler отработал — очищаем
-            this._pendingRecreateHandler = null;
-        };
+                    if (!this.gainNode) {
+                        this.gainNode = this.audioContext.createGain();
+                        this.gainNode.gain.value = 1.0;
+                        this.gainNode.connect(this.destination ?? this.audioContext.destination);
+                    }
 
-        this.mediaElement.addEventListener('loadeddata', this._pendingRecreateHandler, { once: true });
+                    this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
+                    this.sourceNode.connect(this.gainNode ?? this.destination ?? this.audioContext.destination);
+                } catch (e) {
+                    console.warn('MediaPlayer.reset: recreate sourceNode failed', e);
+                }
 
-        // Принудительно начинаем загрузку, чтобы событие loadeddata гарантированно сработало
-        this.mediaElement.load();
+                // handler отработал — очищаем и разрешаем Promise
+                this._pendingRecreateHandler = null;
+                resolve();
+            };
 
-        this.state = 'PREFETCHED';
+            this.mediaElement.addEventListener('loadeddata', this._pendingRecreateHandler, { once: true });
+
+            // Принудительно начинаем загрузку, чтобы событие loadeddata гарантированно сработало
+            this.mediaElement.load();
+
+            this.state = 'PREFETCHED';
+        });
     }
 }
 
