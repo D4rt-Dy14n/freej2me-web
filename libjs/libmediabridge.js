@@ -3,9 +3,12 @@
 export default {
     async Java_pl_zb3_freej2me_bridge_media_MediaBridge_createMediaPlayer(lib) {
         const player = window.libmedia.createMediaPlayer();
-        player.addEventListener('end-of-media', () => {
-            window.emulator.call('pl/zb3/freej2me/bridge/media/MediaBridge', 'playerEndOfMedia', [player]);
-        });
+        if (!player.__eomHook) {
+            player.addEventListener('end-of-media', () => {
+                window.emulator.call('pl/zb3/freej2me/bridge/media/MediaBridge', 'playerEndOfMedia', [player]);
+            });
+            player.__eomHook = true;
+        }
         return player;
     },
     async Java_pl_zb3_freej2me_bridge_media_MediaBridge_createPlayer(lib) {

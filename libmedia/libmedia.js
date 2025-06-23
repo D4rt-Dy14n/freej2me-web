@@ -460,98 +460,64 @@ export class MediaPlayer extends EventTarget {
     reset() {
         if (!this.mediaElement) return Promise.resolve();
 
-        // Очищаем флаг завершения при любом сбросе
+        // сброс флага завершения
         this.hasEndedOnce = false;
 
-        // Если данных нет – переводим в UNREALIZED
+        // если данных нет – ничего не делаем
         if (!this.blob) {
-            // полный сброс источника
-            this.mediaElement.pause();
-            if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
-            this.mediaElement.removeAttribute('src');
-            this.mediaElement.load();
+            try { this.mediaElement.pause(); } catch(_){}
             this.state = 'UNREALIZED';
             return Promise.resolve();
         }
 
-        // Останавливаем текущее воспроизведение и обнуляем время
-        this.mediaElement.pause();
-        this.mediaElement.currentTime = 0;
+        // 1. Останавливаем и отключаем старый элемент
+        try { this.mediaElement.pause(); } catch(_){}
+        if (this.sourceNode) {
+            this.sourceNode.disconnect();
+            this.sourceNode = null;
+        }
+        if (this.objectUrl) {
+            URL.revokeObjectURL(this.objectUrl);
+            this.objectUrl = null;
+        }
+        if (this._pendingRecreateHandler && this.mediaElement) {
+            this.mediaElement.removeEventListener('loadeddata', this._pendingRecreateHandler);
+            this.mediaElement.removeEventListener('error', this._pendingRecreateHandler);
+        }
 
-        // Освобождаем старый URL и создаём новый
-        if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+        // 2. Создаём новый mediaElement
+        const isVideo = (this.contentType || '').startsWith('video/');
+        this.mediaElement = document.createElement(isVideo ? 'video' : 'audio');
+
+        // Копируем события
+        ['playing','waiting','pause','ended','loadeddata','error'].forEach(evt => {
+            this.mediaElement.addEventListener(evt, e => this.dispatchEvent(new Event(e.type)));
+        });
+        this._eventsLogged = false; // заставим _ensureEventLogs() повесить логи заново
+
+        // 3. Новый ObjectURL
         this.objectUrl = URL.createObjectURL(this.blob);
         this.mediaElement.src = this.objectUrl;
 
-        // ФИКС: Отменяем предыдущий reset если он ещё в процессе
-        if (this._pendingResetResolver) {
-            // Резолвим предыдущий Promise чтобы не оставить его висящим
-            this._pendingResetResolver();
-            this._pendingResetResolver = null;
+        // 4. Пересоздаём аудио цепочку
+        if (!this.gainNode) {
+            this.gainNode = this.audioContext.createGain();
+            this.gainNode.gain.value = 1.0;
+            this.gainNode.connect(this.destination ?? this.audioContext.destination);
         }
+        this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
+        this.sourceNode.connect(this.gainNode ?? this.destination ?? this.audioContext.destination);
 
-        // Очищаем старые обработчики
-        if (this._pendingRecreateHandler) {
-            this.mediaElement.removeEventListener('loadeddata', this._pendingRecreateHandler);
-            this.mediaElement.removeEventListener('error', this._pendingRecreateHandler);
-            this._pendingRecreateHandler = null;
-        }
-
-        // Возвращаем Promise который разрешается когда reset завершён
-        return new Promise((resolve, reject) => {
-            // Сохраняем resolver для возможности отмены при следующем reset
-            this._pendingResetResolver = resolve;
-
-            // Таймаут для защиты от зависания (5 секунд)
-            const timeout = setTimeout(() => {
-                console.warn('[MediaPlayer] reset timeout, forcing resolve');
-                this._cleanupResetHandlers();
-                resolve();
-            }, 5000);
-
-            this._pendingRecreateHandler = (event) => {
-                clearTimeout(timeout);
-
-                if (event.type === 'error') {
-                    console.warn('[MediaPlayer] reset failed due to load error:', event);
-                    this._cleanupResetHandlers();
-                    resolve(); // Резолвим даже при ошибке чтобы не блокировать
-                    return;
-                }
-
-                // Событие loadeddata - успешная загрузка
-                if (!this.audioContext || this.audioContext.state === 'closed') {
-                    this._cleanupResetHandlers();
-                    resolve();
-                    return;
-                }
-
-                try {
-                    if (this.sourceNode) this.sourceNode.disconnect();
-
-                    if (!this.gainNode) {
-                        this.gainNode = this.audioContext.createGain();
-                        this.gainNode.gain.value = 1.0;
-                        this.gainNode.connect(this.destination ?? this.audioContext.destination);
-                    }
-
-                    this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
-                    this.sourceNode.connect(this.gainNode ?? this.destination ?? this.audioContext.destination);
-                } catch (e) {
-                    console.warn('MediaPlayer.reset: recreate sourceNode failed', e);
-                }
-
-                this._cleanupResetHandlers();
+        // 5. Ждём loadeddata | error
+        return new Promise(resolve => {
+            const done = () => {
+                this.mediaElement.removeEventListener('loadeddata', done);
+                this.mediaElement.removeEventListener('error', done);
                 resolve();
             };
-
-            // Слушаем и loadeddata и error события
-            this.mediaElement.addEventListener('loadeddata', this._pendingRecreateHandler, { once: true });
-            this.mediaElement.addEventListener('error', this._pendingRecreateHandler, { once: true });
-
-            // Принудительно начинаем загрузку, чтобы событие loadeddata гарантированно сработало
+            this.mediaElement.addEventListener('loadeddata', done, { once: true });
+            this.mediaElement.addEventListener('error', done, { once: true });
             this.mediaElement.load();
-
             this.state = 'PREFETCHED';
         });
     }
