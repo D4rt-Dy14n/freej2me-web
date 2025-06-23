@@ -391,6 +391,9 @@ export class MediaPlayer extends EventTarget {
     }
 
     close() {
+        // ФИКС: Очищаем pending reset handlers перед закрытием
+        this._cleanupResetHandlers();
+
         if (this.mediaElement) {
             this.mediaElement.pause();
             this.mediaElement.src = '';
@@ -480,17 +483,45 @@ export class MediaPlayer extends EventTarget {
         this.objectUrl = URL.createObjectURL(this.blob);
         this.mediaElement.src = this.objectUrl;
 
-        // Если уже есть незавершённый обработчик – убираем его
+        // ФИКС: Отменяем предыдущий reset если он ещё в процессе
+        if (this._pendingResetResolver) {
+            // Резолвим предыдущий Promise чтобы не оставить его висящим
+            this._pendingResetResolver();
+            this._pendingResetResolver = null;
+        }
+
+        // Очищаем старые обработчики
         if (this._pendingRecreateHandler) {
             this.mediaElement.removeEventListener('loadeddata', this._pendingRecreateHandler);
+            this.mediaElement.removeEventListener('error', this._pendingRecreateHandler);
             this._pendingRecreateHandler = null;
         }
 
         // Возвращаем Promise который разрешается когда reset завершён
-        return new Promise((resolve) => {
-            this._pendingRecreateHandler = () => {
+        return new Promise((resolve, reject) => {
+            // Сохраняем resolver для возможности отмены при следующем reset
+            this._pendingResetResolver = resolve;
+
+            // Таймаут для защиты от зависания (5 секунд)
+            const timeout = setTimeout(() => {
+                console.warn('[MediaPlayer] reset timeout, forcing resolve');
+                this._cleanupResetHandlers();
+                resolve();
+            }, 5000);
+
+            this._pendingRecreateHandler = (event) => {
+                clearTimeout(timeout);
+
+                if (event.type === 'error') {
+                    console.warn('[MediaPlayer] reset failed due to load error:', event);
+                    this._cleanupResetHandlers();
+                    resolve(); // Резолвим даже при ошибке чтобы не блокировать
+                    return;
+                }
+
+                // Событие loadeddata - успешная загрузка
                 if (!this.audioContext || this.audioContext.state === 'closed') {
-                    this._pendingRecreateHandler = null;
+                    this._cleanupResetHandlers();
                     resolve();
                     return;
                 }
@@ -510,18 +541,29 @@ export class MediaPlayer extends EventTarget {
                     console.warn('MediaPlayer.reset: recreate sourceNode failed', e);
                 }
 
-                // handler отработал — очищаем и разрешаем Promise
-                this._pendingRecreateHandler = null;
+                this._cleanupResetHandlers();
                 resolve();
             };
 
+            // Слушаем и loadeddata и error события
             this.mediaElement.addEventListener('loadeddata', this._pendingRecreateHandler, { once: true });
+            this.mediaElement.addEventListener('error', this._pendingRecreateHandler, { once: true });
 
             // Принудительно начинаем загрузку, чтобы событие loadeddata гарантированно сработало
             this.mediaElement.load();
 
             this.state = 'PREFETCHED';
         });
+    }
+
+    // Вспомогательный метод для очистки обработчиков reset
+    _cleanupResetHandlers() {
+        if (this._pendingRecreateHandler) {
+            this.mediaElement.removeEventListener('loadeddata', this._pendingRecreateHandler);
+            this.mediaElement.removeEventListener('error', this._pendingRecreateHandler);
+            this._pendingRecreateHandler = null;
+        }
+        this._pendingResetResolver = null;
     }
 }
 
