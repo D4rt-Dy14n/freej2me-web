@@ -12,6 +12,66 @@ let state = {
 };
 let defaultSettings = {};
 
+// Проверяем, существует ли путь /files/<appId>
+async function doesAppExist(appId) {
+    // Проверяем наличие файла app.jar внутри директории приложения
+    return (await cjFileBlob(`/files/${appId}/app.jar`)) !== null;
+}
+
+// Генерирует уникальный appId, добавляя суффикс _1, _2, ...
+async function makeUniqueAppId(loader) {
+    let baseId = await loader.getAppId();
+
+    // 1) Если исходного id нет – генерируем
+    if (!baseId) {
+        baseId = `app_${Date.now()}`;
+
+        // безопасно устанавливаем id
+        if (typeof loader.setAppId === 'function') {
+            await loader.setAppId(baseId);
+        } else {
+            try { loader.appId = baseId; } catch (_) {}
+        }
+    }
+
+    // 2) Уникализируем с ограничением попыток, чтобы не зациклиться
+    let uniqueId = baseId;
+    const MAX_ATTEMPTS = 50;
+    let counter = 1;
+    while (await doesAppExist(uniqueId) && counter <= MAX_ATTEMPTS) {
+        uniqueId = `${baseId}_${counter++}`;
+    }
+
+    // если все варианты были заняты – добавляем ещё timestamp и проверяем ещё раз
+    if (await doesAppExist(uniqueId)) {
+        const EXTRA_ATTEMPTS = 20;
+        let extra = 0;
+        do {
+            uniqueId = `${baseId}_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+            extra++;
+        } while (await doesAppExist(uniqueId) && extra < EXTRA_ATTEMPTS);
+
+        if (extra >= EXTRA_ATTEMPTS && await doesAppExist(uniqueId)) {
+            throw new Error('Unable to generate unique appId');
+        }
+    }
+
+    // 3) Записываем в loader (если метод существует) либо напрямую в поле
+    const currentId = await loader.getAppId();
+    if (currentId !== uniqueId) {
+        if (typeof loader.setAppId === 'function') {
+            await loader.setAppId(uniqueId);
+        } else {
+            // fallback – попытка прямой установки
+            try {
+                loader.appId = uniqueId;
+            } catch (_) {}
+        }
+    }
+
+    return uniqueId;
+}
+
 async function main() {
     try {
         console.log("Launcher: Начинаем инициализацию...");
@@ -435,6 +495,8 @@ async function setupNewGameManage(loader) {
 
     await javaToKv(loader.properties, state.currentGame.appProperties);
 
+    // Здесь ещё рано вызывать initApp, делаем это позже при сохранении
+
     setupAddManageGame(state.currentGame, true);
 }
 
@@ -664,10 +726,15 @@ async function doAddSaveGame() {
 
         if (state.currentGame.jarFile) {
             console.log("Launcher: Инициализируем новую игру...");
-            // new game
+            // генерируем уникальный appId, если такой уже существует
+            await makeUniqueAppId(state.lastLoader);
+
+            // синхронизируем state.currentGame.appId с id, установленным в loader
+            state.currentGame.appId = await state.lastLoader.getAppId();
+
             await launcherUtil.initApp(
                 state.currentGame.jarFile,
-                state.lastLoader, // loader with added properties, for name..
+                state.lastLoader, // loader with final уникальным appId
                 jsettings,
                 jappProps,
                 jsysProps
