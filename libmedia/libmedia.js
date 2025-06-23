@@ -328,6 +328,9 @@ export class MediaPlayer extends EventTarget {
         if (this.mediaElement) {
             this.mediaElement.pause();
             this.mediaElement.currentTime = 0;
+            // Принудительно перезагружаем медиа для подготовки к повторному воспроизведению
+            // Это критично для некоторых браузеров, особенно мобильных
+            this.mediaElement.load();
         }
     }
 
