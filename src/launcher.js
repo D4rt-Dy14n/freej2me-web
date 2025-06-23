@@ -21,7 +21,11 @@ async function doesAppExist(appId) {
 // Генерирует уникальный appId, добавляя суффикс _1, _2, ...
 async function makeUniqueAppId(loader) {
     let baseId = await loader.getAppId();
-    if (!baseId) return baseId;
+
+    // если appId ещё не задан – формируем базовый идентификатор
+    if (!baseId) {
+        baseId = `app_${Date.now()}`; // гарантированно уникально по времени
+    }
 
     let uniqueId = baseId;
     let counter = 1;
