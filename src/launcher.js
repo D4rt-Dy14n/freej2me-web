@@ -25,8 +25,13 @@ async function makeUniqueAppId(loader) {
     // 1) Если исходного id нет – генерируем
     if (!baseId) {
         baseId = `app_${Date.now()}`;
-        // сразу прописываем его в loader, иначе останется null
-        await loader.setAppId(baseId);
+
+        // безопасно устанавливаем id
+        if (typeof loader.setAppId === 'function') {
+            await loader.setAppId(baseId);
+        } else {
+            try { loader.appId = baseId; } catch (_) {}
+        }
     }
 
     // 2) Уникализируем с ограничением попыток, чтобы не зациклиться
@@ -39,9 +44,16 @@ async function makeUniqueAppId(loader) {
 
     // если все варианты были заняты – добавляем ещё timestamp и проверяем ещё раз
     if (await doesAppExist(uniqueId)) {
+        const EXTRA_ATTEMPTS = 20;
+        let extra = 0;
         do {
             uniqueId = `${baseId}_${Date.now()}_${Math.floor(Math.random()*1000)}`;
-        } while (await doesAppExist(uniqueId));
+            extra++;
+        } while (await doesAppExist(uniqueId) && extra < EXTRA_ATTEMPTS);
+
+        if (extra >= EXTRA_ATTEMPTS && await doesAppExist(uniqueId)) {
+            throw new Error('Unable to generate unique appId');
+        }
     }
 
     // 3) Записываем в loader (если метод существует) либо напрямую в поле
