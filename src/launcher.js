@@ -22,18 +22,28 @@ async function doesAppExist(appId) {
 async function makeUniqueAppId(loader) {
     let baseId = await loader.getAppId();
 
-    // если appId ещё не задан – формируем базовый идентификатор
+    // 1) Если исходного id нет – генерируем
     if (!baseId) {
-        baseId = `app_${Date.now()}`; // гарантированно уникально по времени
+        baseId = `app_${Date.now()}`;
+        // сразу прописываем его в loader, иначе останется null
+        await loader.setAppId(baseId);
     }
 
+    // 2) Уникализируем с ограничением попыток, чтобы не зациклиться
     let uniqueId = baseId;
+    const MAX_ATTEMPTS = 50;
     let counter = 1;
-    while (await doesAppExist(uniqueId)) {
+    while (await doesAppExist(uniqueId) && counter <= MAX_ATTEMPTS) {
         uniqueId = `${baseId}_${counter++}`;
     }
 
-    if (uniqueId !== baseId) {
+    // если все варианты были заняты – добавляем ещё timestamp
+    if (await doesAppExist(uniqueId)) {
+        uniqueId = `${baseId}_${Date.now()}`;
+    }
+
+    // 3) Записываем в loader, если изменилось
+    if ((await loader.getAppId()) !== uniqueId) {
         await loader.setAppId(uniqueId);
     }
 
