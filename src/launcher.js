@@ -12,65 +12,31 @@ let state = {
 };
 let defaultSettings = {};
 
-// Проверяем, существует ли путь /files/<appId>
-async function doesAppExist(appId) {
-    // Проверяем наличие файла app.jar внутри директории приложения
-    return (await cjFileBlob(`/files/${appId}/app.jar`)) !== null;
+// ===== Snowflake-style ID generator =====
+const snowflake = { lastTs: 0, seq: 0 };
+
+function generateSnowflakeId(machineId = 0) {
+    const ts = Date.now(); // миллисекунды с эпохи, 41 бит хватает до 2081 года
+
+    if (ts === snowflake.lastTs) {
+        snowflake.seq = (snowflake.seq + 1) & 0xFFF; // 12-битный счётчик
+        if (snowflake.seq === 0) {
+            // переполнение счётчика – ждём следующей миллисекунды
+            while (Date.now() === ts) {/* spin */}
+        }
+    } else {
+        snowflake.seq = 0;
+        snowflake.lastTs = ts;
+    }
+
+    const mid = machineId & 0x3FF; // 10 бит
+
+    // Склеиваем поля вручную, нам не нужен BigInt
+    const idStr = `${ts.toString(36)}-${mid.toString(36)}-${snowflake.seq.toString(36)}`;
+    return idStr;
 }
 
-// Генерирует уникальный appId, добавляя суффикс _1, _2, ...
-async function makeUniqueAppId(loader) {
-    let baseId = await loader.getAppId();
-
-    // 1) Если исходного id нет – генерируем
-    if (!baseId) {
-        baseId = `app_${Date.now()}`;
-
-        // безопасно устанавливаем id
-        if (typeof loader.setAppId === 'function') {
-            await loader.setAppId(baseId);
-        } else {
-            try { loader.appId = baseId; } catch (_) {}
-        }
-    }
-
-    // 2) Уникализируем с ограничением попыток, чтобы не зациклиться
-    let uniqueId = baseId;
-    const MAX_ATTEMPTS = 50;
-    let counter = 1;
-    while (await doesAppExist(uniqueId) && counter <= MAX_ATTEMPTS) {
-        uniqueId = `${baseId}_${counter++}`;
-    }
-
-    // если все варианты были заняты – добавляем ещё timestamp и проверяем ещё раз
-    if (await doesAppExist(uniqueId)) {
-        const EXTRA_ATTEMPTS = 20;
-        let extra = 0;
-        do {
-            uniqueId = `${baseId}_${Date.now()}_${Math.floor(Math.random()*1000)}`;
-            extra++;
-        } while (await doesAppExist(uniqueId) && extra < EXTRA_ATTEMPTS);
-
-        if (extra >= EXTRA_ATTEMPTS && await doesAppExist(uniqueId)) {
-            throw new Error('Unable to generate unique appId');
-        }
-    }
-
-    // 3) Записываем в loader (если метод существует) либо напрямую в поле
-    const currentId = await loader.getAppId();
-    if (currentId !== uniqueId) {
-        if (typeof loader.setAppId === 'function') {
-            await loader.setAppId(uniqueId);
-        } else {
-            // fallback – попытка прямой установки
-            try {
-                loader.appId = uniqueId;
-            } catch (_) {}
-        }
-    }
-
-    return uniqueId;
-}
+// === ранее здесь были doesAppExist / makeUniqueAppId, теперь не нужны ===
 
 async function main() {
     try {
@@ -401,6 +367,7 @@ function setupAddMode() {
             const reader = new FileReader();
             reader.onload = async () => {
                 const arrayBuffer = reader.result;
+                state.currentGame.jarSize = arrayBuffer.byteLength || 0;
                 await processGameFile(arrayBuffer, file.name);
             };
             reader.readAsArrayBuffer(file);
@@ -429,41 +396,17 @@ async function processGameFile(fileBuffer, fileName) {
     const loader = await MIDletLoader.getMIDletLoader(jarFile);
     state.lastLoader = loader;
 
+    // Если у loader нет appId, генерируем на основе имени файла
     if (!(await loader.getAppId())) {
-        document.getElementById("file-input-step").style.display = "";
-        document.getElementById("file-input-loading").style.display = "none";
-        document.getElementById("file-input-jad-step").style.display = "";
-        document.getElementById("upload-descriptor-file-input").value = null;
-
-        document.getElementById("upload-descriptor-file-input").onchange = (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                document.getElementById("file-input-step").style.display = "none";
-                document.getElementById("file-input-jad-step").style.display = "none";
-                document.getElementById("file-input-loading").style.display = "";
-
-                const reader = new FileReader();
-                reader.onload = async () => {
-                    const arrayBuffer = reader.result;
-                    await launcherUtil.augementLoaderWithJAD(
-                        loader,
-                        new Int8Array(arrayBuffer)
-                    );
-
-                    if (await loader.getAppId()) {
-                        setupNewGameManage(loader);
-                    }
-                };
-                reader.readAsArrayBuffer(file);
-            }
-        };
-
-        document.getElementById('continue-without-jad').onclick = () => {
-            continueWithoutJAD(loader, fileName);
-        };
-    } else {
-        setupNewGameManage(loader);
+        const genId = generateSnowflakeId(state.currentGame.jarSize);
+        if (typeof loader.setAppId === 'function') {
+            await loader.setAppId(genId);
+        } else {
+            loader.appId = genId;
+        }
     }
+
+    setupNewGameManage(loader);
 }
 
 function fillGuessedSettings(analysisResult, app) {
@@ -475,14 +418,6 @@ function fillGuessedSettings(analysisResult, app) {
     if (analysisResult.phoneType) {
         app.settings.phone = analysisResult.phoneType;
     }
-}
-
-async function continueWithoutJAD(loader, origName) {
-    // if we're here then need fallback name
-    await launcherUtil.ensureAppId(loader, origName);
-    loader.name = await loader.getAppId();
-
-    setupNewGameManage(loader);
 }
 
 async function setupNewGameManage(loader) {
@@ -634,9 +569,6 @@ async function setupAddManageGame(app, isAdding) {
         };
     }
 
-    const jadFileInput = document.getElementById("aux-jad-file-input");
-    jadFileInput.onchange = handleOptionalJadFileUpload;
-
     const phoneType = document.getElementById("phoneType");
     phoneType.value = app.settings.phone || "standard";
 
@@ -682,33 +614,6 @@ function adjustScreenSizeInput() {
         document.getElementById("screenSize").value === "custom" ? "" : "none";
 }
 
-function handleOptionalJadFileUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    document.getElementById("add-manage-step").style.display = "none";
-    document.getElementById("file-input-loading").style.display = "";
-
-    // read as text?
-    const reader = new FileReader();
-    reader.onload = async () => {
-        // this won't affect the name/id
-        readToKv(reader.result, state.currentGame.appProperties);
-
-        const appPropsTextarea = document.getElementById("editAppProps");
-        appPropsTextarea.value = Object.entries(
-            state.currentGame.appProperties || {}
-        )
-            .map(([key, value]) => `${key}: ${value}`)
-            .join("\n");
-    };
-    reader.onloadend = () => {
-        document.getElementById("add-manage-step").style.display = "";
-        document.getElementById("file-input-loading").style.display = "none";
-    };
-    reader.readAsText(file);
-}
-
 async function doAddSaveGame() {
     try {
         console.log("Launcher: Начинаем сохранение игры...");
@@ -726,11 +631,16 @@ async function doAddSaveGame() {
 
         if (state.currentGame.jarFile) {
             console.log("Launcher: Инициализируем новую игру...");
-            // генерируем уникальный appId, если такой уже существует
-            await makeUniqueAppId(state.lastLoader);
+            // генерируем snowflake-id
+            const newAppId = generateSnowflakeId(state.currentGame.jarSize);
 
-            // синхронизируем state.currentGame.appId с id, установленным в loader
-            state.currentGame.appId = await state.lastLoader.getAppId();
+            if (typeof state.lastLoader.setAppId === 'function') {
+                await state.lastLoader.setAppId(newAppId);
+            } else {
+                state.lastLoader.appId = newAppId;
+            }
+
+            state.currentGame.appId = newAppId;
 
             await launcherUtil.initApp(
                 state.currentGame.jarFile,
