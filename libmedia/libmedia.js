@@ -471,14 +471,21 @@ export class MediaPlayer extends EventTarget {
         this.objectUrl = URL.createObjectURL(this.blob);
         this.mediaElement.src = this.objectUrl;
 
-        // Safari: пересоздаём MediaElementSourceNode после load()
-        const recreateSourceNode = () => {
-            if (!this.audioContext || this.audioContext.state === 'closed') return;
+        // Если уже есть незавершённый обработчик – убираем его
+        if (this._pendingRecreateHandler) {
+            this.mediaElement.removeEventListener('loadeddata', this._pendingRecreateHandler);
+            this._pendingRecreateHandler = null;
+        }
+
+        this._pendingRecreateHandler = () => {
+            if (!this.audioContext || this.audioContext.state === 'closed') {
+                this._pendingRecreateHandler = null;
+                return;
+            }
 
             try {
                 if (this.sourceNode) this.sourceNode.disconnect();
 
-                // Ждём активную gainNode или создаём новую
                 if (!this.gainNode) {
                     this.gainNode = this.audioContext.createGain();
                     this.gainNode.gain.value = 1.0;
@@ -490,13 +497,12 @@ export class MediaPlayer extends EventTarget {
             } catch (e) {
                 console.warn('MediaPlayer.reset: recreate sourceNode failed', e);
             }
+
+            // handler отработал — очищаем
+            this._pendingRecreateHandler = null;
         };
 
-        // После загрузки медиа пересоздаём подключения (важно для Safari)
-        this.mediaElement.addEventListener('loadeddata', recreateSourceNode, { once: true });
-
-        // Принудительно перезагружаем
-        this.mediaElement.load();
+        this.mediaElement.addEventListener('loadeddata', this._pendingRecreateHandler, { once: true });
 
         this.state = 'PREFETCHED';
     }
