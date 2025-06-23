@@ -27,6 +27,10 @@ export default {
         console.log('[MB] playerStop', {id: player?.playerId, ts: Date.now()});
         player.stop();
     },
+    async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerReset(lib, player) {
+        console.log('[MB] playerReset', {id: player?.playerId, ts: Date.now()});
+        player.reset();
+    },
     async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerGetPosition(lib, player) {
         return player.getPosition();
     },

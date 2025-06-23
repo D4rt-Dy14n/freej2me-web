@@ -445,6 +445,31 @@ export class MediaPlayer extends EventTarget {
         this.mediaElement.addEventListener('ended', () => console.log('[MediaPlayer] ended', this.playerId));
         this.mediaElement.addEventListener('error', (e) => console.error('[MediaPlayer] error', e));
     }
+
+    // Сбрасывает mediaElement в рабочее состояние, создав новый ObjectURL
+    reset() {
+        if (!this.mediaElement) return;
+
+        // Останавливаем текущий элемент
+        this.mediaElement.pause();
+
+        // Освобождаем старый URL
+        if (this.objectUrl) {
+            URL.revokeObjectURL(this.objectUrl);
+        }
+
+        // Создаём новый URL из уже сохранённого Blob
+        if (this.blob) {
+            this.objectUrl = URL.createObjectURL(this.blob);
+            this.mediaElement.src = this.objectUrl;
+        }
+
+        // Позиция в начало и перезагрузка
+        this.mediaElement.currentTime = 0;
+        this.mediaElement.load();
+
+        this.state = 'PREFETCHED';
+    }
 }
 
 
