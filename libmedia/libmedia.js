@@ -119,6 +119,7 @@ export class MediaPlayer extends EventTarget {
     }
 
     async load(contentType, buffer) {
+        this.contentType = contentType;
         if (!buffer || buffer.byteLength === 0) {
             return false;
         }
@@ -450,22 +451,51 @@ export class MediaPlayer extends EventTarget {
     reset() {
         if (!this.mediaElement) return;
 
-        // Останавливаем текущий элемент
+        // Если данных нет – переводим в UNREALIZED
+        if (!this.blob) {
+            // полный сброс источника
+            this.mediaElement.pause();
+            if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+            this.mediaElement.removeAttribute('src');
+            this.mediaElement.load();
+            this.state = 'UNREALIZED';
+            return;
+        }
+
+        // Останавливаем текущее воспроизведение и обнуляем время
         this.mediaElement.pause();
-
-        // Освобождаем старый URL
-        if (this.objectUrl) {
-            URL.revokeObjectURL(this.objectUrl);
-        }
-
-        // Создаём новый URL из уже сохранённого Blob
-        if (this.blob) {
-            this.objectUrl = URL.createObjectURL(this.blob);
-            this.mediaElement.src = this.objectUrl;
-        }
-
-        // Позиция в начало и перезагрузка
         this.mediaElement.currentTime = 0;
+
+        // Освобождаем старый URL и создаём новый
+        if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+        this.objectUrl = URL.createObjectURL(this.blob);
+        this.mediaElement.src = this.objectUrl;
+
+        // Safari: пересоздаём MediaElementSourceNode после load()
+        const recreateSourceNode = () => {
+            if (!this.audioContext || this.audioContext.state === 'closed') return;
+
+            try {
+                if (this.sourceNode) this.sourceNode.disconnect();
+
+                // Ждём активную gainNode или создаём новую
+                if (!this.gainNode) {
+                    this.gainNode = this.audioContext.createGain();
+                    this.gainNode.gain.value = 1.0;
+                    this.gainNode.connect(this.destination ?? this.audioContext.destination);
+                }
+
+                this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
+                this.sourceNode.connect(this.gainNode ?? this.destination ?? this.audioContext.destination);
+            } catch (e) {
+                console.warn('MediaPlayer.reset: recreate sourceNode failed', e);
+            }
+        };
+
+        // После загрузки медиа пересоздаём подключения (важно для Safari)
+        this.mediaElement.addEventListener('loadeddata', recreateSourceNode, { once: true });
+
+        // Принудительно перезагружаем
         this.mediaElement.load();
 
         this.state = 'PREFETCHED';
