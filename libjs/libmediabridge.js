@@ -30,9 +30,8 @@ export default {
         // ФИКС: Автоматический сброс если MediaPlayer уже завершался
         // Это компенсирует проблему с жизненным циклом в Java коде
         if (player?.hasEndedOnce || player?.mediaElement?.ended) {
-            console.log('[MB] playerPlay: MediaPlayer завершался ранее или в состоянии ended, делаем reset');
-            player.reset();
-            player.hasEndedOnce = false; // Сбрасываем флаг
+            console.log('[MB] playerPlay: MediaPlayer завершался ранее или в состоянии ended, делаем reset и ждем завершения');
+            await player.reset(); // ФИКС: ждем завершения reset перед play
         }
         
         await player.play();
@@ -47,7 +46,7 @@ export default {
     },
     async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerReset(lib, player) {
         console.log('[MB] playerReset', {id: player?.playerId, ts: Date.now()});
-        player.reset();
+        await player.reset();
     },
     async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerGetPosition(lib, player) {
         return player.getPosition();

@@ -391,6 +391,9 @@ export class MediaPlayer extends EventTarget {
     }
 
     close() {
+        // ФИКС: Очищаем pending reset handlers перед закрытием
+        this._cleanupResetHandlers();
+
         if (this.mediaElement) {
             this.mediaElement.pause();
             this.mediaElement.src = '';
@@ -455,7 +458,10 @@ export class MediaPlayer extends EventTarget {
 
     // Сбрасывает mediaElement в рабочее состояние, создав новый ObjectURL
     reset() {
-        if (!this.mediaElement) return;
+        if (!this.mediaElement) return Promise.resolve();
+
+        // Очищаем флаг завершения при любом сбросе
+        this.hasEndedOnce = false;
 
         // Если данных нет – переводим в UNREALIZED
         if (!this.blob) {
@@ -465,7 +471,7 @@ export class MediaPlayer extends EventTarget {
             this.mediaElement.removeAttribute('src');
             this.mediaElement.load();
             this.state = 'UNREALIZED';
-            return;
+            return Promise.resolve();
         }
 
         // Останавливаем текущее воспроизведение и обнуляем время
@@ -477,43 +483,87 @@ export class MediaPlayer extends EventTarget {
         this.objectUrl = URL.createObjectURL(this.blob);
         this.mediaElement.src = this.objectUrl;
 
-        // Если уже есть незавершённый обработчик – убираем его
+        // ФИКС: Отменяем предыдущий reset если он ещё в процессе
+        if (this._pendingResetResolver) {
+            // Резолвим предыдущий Promise чтобы не оставить его висящим
+            this._pendingResetResolver();
+            this._pendingResetResolver = null;
+        }
+
+        // Очищаем старые обработчики
         if (this._pendingRecreateHandler) {
             this.mediaElement.removeEventListener('loadeddata', this._pendingRecreateHandler);
+            this.mediaElement.removeEventListener('error', this._pendingRecreateHandler);
             this._pendingRecreateHandler = null;
         }
 
-        this._pendingRecreateHandler = () => {
-            if (!this.audioContext || this.audioContext.state === 'closed') {
-                this._pendingRecreateHandler = null;
-                return;
-            }
+        // Возвращаем Promise который разрешается когда reset завершён
+        return new Promise((resolve, reject) => {
+            // Сохраняем resolver для возможности отмены при следующем reset
+            this._pendingResetResolver = resolve;
 
-            try {
-                if (this.sourceNode) this.sourceNode.disconnect();
+            // Таймаут для защиты от зависания (5 секунд)
+            const timeout = setTimeout(() => {
+                console.warn('[MediaPlayer] reset timeout, forcing resolve');
+                this._cleanupResetHandlers();
+                resolve();
+            }, 5000);
 
-                if (!this.gainNode) {
-                    this.gainNode = this.audioContext.createGain();
-                    this.gainNode.gain.value = 1.0;
-                    this.gainNode.connect(this.destination ?? this.audioContext.destination);
+            this._pendingRecreateHandler = (event) => {
+                clearTimeout(timeout);
+
+                if (event.type === 'error') {
+                    console.warn('[MediaPlayer] reset failed due to load error:', event);
+                    this._cleanupResetHandlers();
+                    resolve(); // Резолвим даже при ошибке чтобы не блокировать
+                    return;
                 }
 
-                this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
-                this.sourceNode.connect(this.gainNode ?? this.destination ?? this.audioContext.destination);
-            } catch (e) {
-                console.warn('MediaPlayer.reset: recreate sourceNode failed', e);
-            }
+                // Событие loadeddata - успешная загрузка
+                if (!this.audioContext || this.audioContext.state === 'closed') {
+                    this._cleanupResetHandlers();
+                    resolve();
+                    return;
+                }
 
-            // handler отработал — очищаем
+                try {
+                    if (this.sourceNode) this.sourceNode.disconnect();
+
+                    if (!this.gainNode) {
+                        this.gainNode = this.audioContext.createGain();
+                        this.gainNode.gain.value = 1.0;
+                        this.gainNode.connect(this.destination ?? this.audioContext.destination);
+                    }
+
+                    this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
+                    this.sourceNode.connect(this.gainNode ?? this.destination ?? this.audioContext.destination);
+                } catch (e) {
+                    console.warn('MediaPlayer.reset: recreate sourceNode failed', e);
+                }
+
+                this._cleanupResetHandlers();
+                resolve();
+            };
+
+            // Слушаем и loadeddata и error события
+            this.mediaElement.addEventListener('loadeddata', this._pendingRecreateHandler, { once: true });
+            this.mediaElement.addEventListener('error', this._pendingRecreateHandler, { once: true });
+
+            // Принудительно начинаем загрузку, чтобы событие loadeddata гарантированно сработало
+            this.mediaElement.load();
+
+            this.state = 'PREFETCHED';
+        });
+    }
+
+    // Вспомогательный метод для очистки обработчиков reset
+    _cleanupResetHandlers() {
+        if (this._pendingRecreateHandler && this.mediaElement) {
+            this.mediaElement.removeEventListener('loadeddata', this._pendingRecreateHandler);
+            this.mediaElement.removeEventListener('error', this._pendingRecreateHandler);
             this._pendingRecreateHandler = null;
-        };
-
-        this.mediaElement.addEventListener('loadeddata', this._pendingRecreateHandler, { once: true });
-
-        // Принудительно начинаем загрузку, чтобы событие loadeddata гарантированно сработало
-        this.mediaElement.load();
-
-        this.state = 'PREFETCHED';
+        }
+        this._pendingResetResolver = null;
     }
 }
 
