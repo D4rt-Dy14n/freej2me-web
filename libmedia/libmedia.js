@@ -500,23 +500,38 @@ export class MediaPlayer extends EventTarget {
         this.mediaElement.src = this.objectUrl;
 
         // 4. Пересоздаём аудио цепочку
-        if (!this.gainNode) {
-            this.gainNode = this.audioContext.createGain();
-            this.gainNode.gain.value = 1.0;
-            this.gainNode.connect(this.destination ?? this.audioContext.destination);
+        try {
+            if (this.audioContext && this.audioContext.state !== 'closed') {
+                if (!this.gainNode) {
+                    this.gainNode = this.audioContext.createGain();
+                    this.gainNode.gain.value = 1.0;
+                    this.gainNode.connect(this.destination ?? this.audioContext.destination);
+                }
+                this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
+                this.sourceNode.connect(this.gainNode ?? this.destination ?? this.audioContext.destination);
+            }
+        } catch (e) {
+            console.warn('[MediaPlayer.reset] Audio node rebuild failed', e);
         }
-        this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
-        this.sourceNode.connect(this.gainNode ?? this.destination ?? this.audioContext.destination);
 
-        // 5. Ждём loadeddata | error
         return new Promise(resolve => {
-            const done = () => {
+            const cleanup = () => {
                 this.mediaElement.removeEventListener('loadeddata', done);
                 this.mediaElement.removeEventListener('error', done);
+                this._pendingRecreateHandler = null;
                 resolve();
             };
-            this.mediaElement.addEventListener('loadeddata', done, { once: true });
-            this.mediaElement.addEventListener('error', done, { once: true });
+            this._pendingRecreateHandler = cleanup;
+
+            this.mediaElement.addEventListener('loadeddata', cleanup, { once: true });
+            this.mediaElement.addEventListener('error', cleanup, { once: true });
+
+            // таймаут 5 с чтобы не зависнуть навсегда
+            const to = setTimeout(() => {
+                console.warn('[MediaPlayer.reset] timeout 5s, forcing resolve');
+                cleanup();
+            }, 5000);
+
             this.mediaElement.load();
             this.state = 'PREFETCHED';
         });
