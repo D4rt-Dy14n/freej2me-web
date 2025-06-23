@@ -16,7 +16,25 @@ export default {
         return res;
     },
     async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerPlay(lib, player) {
-        console.log('[MB] playerPlay', {id: player?.playerId, ts: Date.now()});
+        console.log('[MB] playerPlay', {
+            id: player?.playerId, 
+            ts: Date.now(),
+            mediaElementState: player?.mediaElement ? {
+                paused: player.mediaElement.paused,
+                ended: player.mediaElement.ended,
+                currentTime: player.mediaElement.currentTime,
+                duration: player.mediaElement.duration
+            } : null
+        });
+        
+        // ФИКС: Автоматический сброс если MediaPlayer уже завершался
+        // Это компенсирует проблему с жизненным циклом в Java коде
+        if (player?.hasEndedOnce || player?.mediaElement?.ended) {
+            console.log('[MB] playerPlay: MediaPlayer завершался ранее или в состоянии ended, делаем reset');
+            player.reset();
+            player.hasEndedOnce = false; // Сбрасываем флаг
+        }
+        
         await player.play();
     },
     async Java_pl_zb3_freej2me_bridge_media_MediaBridge_playerPause(lib, player) {

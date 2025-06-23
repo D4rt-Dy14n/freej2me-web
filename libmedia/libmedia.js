@@ -90,6 +90,9 @@ export class MediaPlayer extends EventTarget {
 
         this.audioContext.resume();
 
+        // Флаг для отслеживания завершений
+        this.hasEndedOnce = false;
+
         this.addEventListener('playing', () => {
             this.state = 'STARTED';
         });
@@ -104,6 +107,8 @@ export class MediaPlayer extends EventTarget {
 
         this.addEventListener('ended', () => {
             this.state = 'PREFETCHED';
+            this.hasEndedOnce = true;
+            console.log('[MediaPlayer] ended event, setting hasEndedOnce=true', this.playerId);
             this.dispatchEvent(new Event('end-of-media'));
         });
 
@@ -267,7 +272,8 @@ export class MediaPlayer extends EventTarget {
             paused: this.mediaElement.paused,
             readyState: this.mediaElement.readyState,
             currentTime: this.mediaElement.currentTime.toFixed(3),
-            duration: this.mediaElement.duration
+            duration: this.mediaElement.duration,
+            ended: this.mediaElement.ended
         });
 
         // Если элемент уже проигрывается ‑ перезапускаем.
@@ -275,7 +281,7 @@ export class MediaPlayer extends EventTarget {
         try {
             const atEnd = this.mediaElement.currentTime >= (this.mediaElement.duration || 0) - 0.01;
 
-            if (!this.mediaElement.paused || atEnd) {
+            if (!this.mediaElement.paused || atEnd || this.mediaElement.ended) {
                 // Останавливаем без генерации событий, затем ставим на начало
                 this.mediaElement.pause();
                 this.mediaElement.currentTime = 0;
