@@ -37,14 +37,24 @@ async function makeUniqueAppId(loader) {
         uniqueId = `${baseId}_${counter++}`;
     }
 
-    // если все варианты были заняты – добавляем ещё timestamp
+    // если все варианты были заняты – добавляем ещё timestamp и проверяем ещё раз
     if (await doesAppExist(uniqueId)) {
-        uniqueId = `${baseId}_${Date.now()}`;
+        do {
+            uniqueId = `${baseId}_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+        } while (await doesAppExist(uniqueId));
     }
 
-    // 3) Записываем в loader, если изменилось
-    if ((await loader.getAppId()) !== uniqueId) {
-        await loader.setAppId(uniqueId);
+    // 3) Записываем в loader (если метод существует) либо напрямую в поле
+    const currentId = await loader.getAppId();
+    if (currentId !== uniqueId) {
+        if (typeof loader.setAppId === 'function') {
+            await loader.setAppId(uniqueId);
+        } else {
+            // fallback – попытка прямой установки
+            try {
+                loader.appId = uniqueId;
+            } catch (_) {}
+        }
     }
 
     return uniqueId;
