@@ -697,6 +697,9 @@ async function doAddSaveGame() {
             // генерируем уникальный appId, если такой уже существует
             await makeUniqueAppId(state.lastLoader);
 
+            // синхронизируем state.currentGame.appId с id, установленным в loader
+            state.currentGame.appId = await state.lastLoader.getAppId();
+
             await launcherUtil.initApp(
                 state.currentGame.jarFile,
                 state.lastLoader, // loader with final уникальным appId
