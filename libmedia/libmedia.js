@@ -504,6 +504,9 @@ export class MediaPlayer extends EventTarget {
 
         this.mediaElement.addEventListener('loadeddata', this._pendingRecreateHandler, { once: true });
 
+        // Принудительно начинаем загрузку, чтобы событие loadeddata гарантированно сработало
+        this.mediaElement.load();
+
         this.state = 'PREFETCHED';
     }
 }
