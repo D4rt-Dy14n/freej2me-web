@@ -12,6 +12,30 @@ let state = {
 };
 let defaultSettings = {};
 
+// Проверяем, существует ли путь /files/<appId>
+async function doesAppExist(appId) {
+    // Проверяем наличие файла app.jar внутри директории приложения
+    return (await cjFileBlob(`/files/${appId}/app.jar`)) !== null;
+}
+
+// Генерирует уникальный appId, добавляя суффикс _1, _2, ...
+async function makeUniqueAppId(loader) {
+    let baseId = await loader.getAppId();
+    if (!baseId) return baseId;
+
+    let uniqueId = baseId;
+    let counter = 1;
+    while (await doesAppExist(uniqueId)) {
+        uniqueId = `${baseId}_${counter++}`;
+    }
+
+    if (uniqueId !== baseId) {
+        await loader.setAppId(uniqueId);
+    }
+
+    return uniqueId;
+}
+
 async function main() {
     try {
         console.log("Launcher: Начинаем инициализацию...");
@@ -435,6 +459,8 @@ async function setupNewGameManage(loader) {
 
     await javaToKv(loader.properties, state.currentGame.appProperties);
 
+    // Здесь ещё рано вызывать initApp, делаем это позже при сохранении
+
     setupAddManageGame(state.currentGame, true);
 }
 
@@ -664,10 +690,12 @@ async function doAddSaveGame() {
 
         if (state.currentGame.jarFile) {
             console.log("Launcher: Инициализируем новую игру...");
-            // new game
+            // генерируем уникальный appId, если такой уже существует
+            await makeUniqueAppId(state.lastLoader);
+
             await launcherUtil.initApp(
                 state.currentGame.jarFile,
-                state.lastLoader, // loader with added properties, for name..
+                state.lastLoader, // loader with final уникальным appId
                 jsettings,
                 jappProps,
                 jsysProps
