@@ -515,19 +515,30 @@ export class MediaPlayer extends EventTarget {
         }
 
         return new Promise(resolve => {
+            let timeoutId = null;
+
             const cleanup = () => {
-                this.mediaElement.removeEventListener('loadeddata', done);
-                this.mediaElement.removeEventListener('error', done);
+                // снимаем слушатели
+                this.mediaElement.removeEventListener('loadeddata', cleanup);
+                this.mediaElement.removeEventListener('error', cleanup);
+
+                // отменяем таймер, если он ещё активен
+                if (timeoutId !== null) {
+                    clearTimeout(timeoutId);
+                    timeoutId = null;
+                }
+
                 this._pendingRecreateHandler = null;
                 resolve();
             };
+
             this._pendingRecreateHandler = cleanup;
 
             this.mediaElement.addEventListener('loadeddata', cleanup, { once: true });
             this.mediaElement.addEventListener('error', cleanup, { once: true });
 
-            // таймаут 5 с чтобы не зависнуть навсегда
-            const to = setTimeout(() => {
+            // таймаут 5 с, чтобы не зависнуть навсегда
+            timeoutId = setTimeout(() => {
                 console.warn('[MediaPlayer.reset] timeout 5s, forcing resolve');
                 cleanup();
             }, 5000);
