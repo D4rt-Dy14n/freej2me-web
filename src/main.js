@@ -632,15 +632,25 @@ async function init() {
         }
     }
 
-    console.log("Main: Запускаем FreeJ2ME с аргументами:", args);
+    console.log(`Main: Запускаем FreeJ2ME с аргументами:`, args);
     
     try {
         await FreeJ2ME.main(args);
         console.log("Main: FreeJ2ME запущен успешно");
-    } catch (e) {
-        console.error("Main: Краш FreeJ2ME:", e);
-        if (e.printStackTrace) {
-            e.printStackTrace();
+
+        // Логируем иконки для отладки (внутри try-catch)
+        try {
+            const debugJarPath = appExists ? `/files/${appId}/app.jar` : window.currentJarPath;
+            if (debugJarPath) {
+                await logIconDebug(debugJarPath);
+            }
+        } catch (iconError) {
+            console.warn('Icon debug failed:', iconError);
+        }
+    } catch (error) {
+        console.error("Main: Краш FreeJ2ME:", error);
+        if (error.printStackTrace) {
+            error.printStackTrace();
         }
         document.getElementById('loading').textContent = 'Crash :(';
     }
@@ -649,11 +659,6 @@ async function init() {
     } catch (error) {
         console.error("Main: Ошибка инициализации:", error);
         document.getElementById('loading').textContent = 'Ошибка инициализации: ' + error.message;
-    }
-
-    // Логируем иконки для отладки
-    if (window.currentJarPath) {
-        logIconDebug(window.currentJarPath);
     }
 }
 
