@@ -342,11 +342,11 @@ async function init() {
     console.log = function(...args) {
         const message = args.join(' ');
         // Пропускаем debug логи MIDI системы
-        if (message.includes('playerEOM called') || 
-            message.includes('onplayerstop found') ||
-            message.includes('MIDI sequence set, duration:')) {
-            return;
-        }
+        // if (message.includes('playerEOM called') || 
+        //     message.includes('onplayerstop found') ||
+        //     message.includes('MIDI sequence set, duration:')) {
+        //     return;
+        // }
         originalConsoleLog.apply(console, args);
     };
 
@@ -542,66 +542,18 @@ async function init() {
             const jarPath = "/files/" + jarName;
             const jarPathObj = await Paths.get(jarPath);
 
-            // Считаем приложение существующим, если есть либо директория /files/appId, либо сам JAR.
-            const appExists = (await Files.exists(appDirPath)) || (await Files.exists(jarPathObj));
-            console.log(`Main: Проверяем существование: dir=${await Files.exists(appDirPath)} jar=${await Files.exists(jarPathObj)} → appExists=${appExists}`);
+            // Считаем приложение существующим только если есть JAR файл в /files/
+            const jarExists = await Files.exists(jarPathObj);
+            console.log(`Main: Проверяем существование: jar=${jarExists}`);
             let initSuccess = false;
             
-            if (!appExists) {
-                // Приложение не существует – сразу переходим к ручной копии JAR в /files/
-                {
-                    console.log("Main: Копируем JAR в /files...");
-                    try {
-                        // Убеждаемся, что каталог /files существует
-                        try { await Files.createDirectories(await Paths.get('/files')); } catch(e) {}
-
-                        // Пытаемся взять JAR из localStorage, иначе качаем
-                        let jarData;
-                        const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
-                        const uploaded = uploadedGames.find(g => g.filename === jarName);
-                        if (uploaded && uploaded.data) {
-                            console.log(`Main: Найдена загруженная игра ${jarName} в localStorage`);
-                            const bin = atob(uploaded.data);
-                            jarData = new ArrayBuffer(bin.length);
-                            const u8 = new Uint8Array(jarData);
-                            for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-                            console.log(`Main: Декодировано ${jarData.byteLength} байт из localStorage`);
-                        } else {
-                            console.log(`Main: Загружаем ${jarName} через fetch...`);
-                            const r = await fetch("./games/" + encodeURIComponent(jarName));
-                            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                            jarData = await r.arrayBuffer();
-                            console.log(`Main: Загружено ${jarData.byteLength} байт`);
-                        }
-
-                        // Пишем во /str/<jarName>
-                        const tempPath = "/str/" + jarName;
-                        await addFileToStrMount(tempPath, new Uint8Array(jarData));
-                        console.log(`Main: Файл записан во временный ${tempPath}`);
-
-                        // Копируем JAR во /files/, перед этим пробуем удалить старый файл (если вдруг остался от предыдущих попыток)
-                        const destPath = "/files/" + jarName;
-                        const destPathObj = await Paths.get(destPath);
-                        try { await Files.deleteIfExists(destPathObj); } catch(e) { /* ignore */ }
-                        await Files.copy(await Paths.get(tempPath), destPathObj);
-                        console.log(`Main: Файл скопирован в ${destPath}`);
-
-                        if (await Files.exists(await Paths.get(destPath))) {
-                            const size = await Files.size(await Paths.get(destPath));
-                            console.log(`Main: ✓ файл сохранён (${size} байт)`);
-                            initSuccess = true;
-                        } else {
-                            throw new Error("Копирование не удалось");
-                        }
-                        
-                    } catch (e) {
-                        console.error("Main: Ошибка копирования файла:", e.message);
-                    }
-                }
+            if (!jarExists) {
+                // Приложение не существует – копируем JAR в /files/
+                initSuccess = await copyJarToFiles(jarName, lib);
             }
             
             // Сохраняем дефолтные настройки только если приложение новое
-            if (initSuccess && !appExists) {
+            if (initSuccess && !jarExists) {
                 console.log("Main: Создаем дефолтные настройки для нового приложения...");
                 
                 // Удаляем старые настройки если есть, чтобы убрать поле fps
@@ -618,29 +570,17 @@ async function init() {
             }
             
             // Выбор режима запуска - всегда jar режим из /files/
-            if (initSuccess || appExists) {
+            if (initSuccess || jarExists) {
                 // Если копирование успешно или файл уже существует - используем JAR из /files/
                 args = ['jar', '/files/' + jarName];
                 console.log("Main: Используем JAR из /files/");
             } else {
                 // Файл не скопирован - копируем из ./games/ в /files/
-                console.log("Main: Копируем JAR из ./games/ в /files/...");
-                try {
-                    const gameJarResponse = await fetch('./games/' + encodeURIComponent(jarName));
-                    if (!gameJarResponse.ok) {
-                        throw new Error(`HTTP ${gameJarResponse.status}`);
-                    }
-                    
-                    const gameJarData = await gameJarResponse.arrayBuffer();
-                    const gameJarBytes = new Uint8Array(gameJarData);
-                    
-                    await addFileToStrMount('/files/' + jarName, gameJarBytes);
-                    console.log("Main: JAR успешно скопирован в /files/");
-                    
-                    // Используем скопированный файл
+                console.log("Main: Файл не скопирован, пытаемся скопировать...");
+                const fallbackSuccess = await copyJarToFiles(jarName, lib);
+                if (fallbackSuccess) {
                     args = ['jar', '/files/' + jarName];
-                } catch (copyError) {
-                    console.error("Main: Ошибка копирования JAR:", copyError);
+                } else {
                     // Fallback к оригинальному пути
                     args = ['jar', './games/' + jarName];
                     console.log("Main: Fallback к оригинальному JAR из ./games/");
@@ -871,6 +811,62 @@ async function addFileToStrMount(path, uint8Arr, maxWaitMs = 5000) {
             console.warn('addFileToStrMount retry after error:', e.message);
             await new Promise(r => setTimeout(r, 100));
         }
+    }
+}
+
+// Универсальная функция для копирования JAR файла в /files/
+async function copyJarToFiles(jarName, lib) {
+    console.log(`Main: Копируем JAR ${jarName} в /files/...`);
+    
+    const Files = await lib.java.nio.file.Files;
+    const Paths = await lib.java.nio.file.Paths;
+    
+    try {
+        // Убеждаемся, что каталог /files существует
+        try { await Files.createDirectories(await Paths.get('/files')); } catch(e) {}
+
+        // Пытаемся взять JAR из localStorage, иначе качаем
+        let jarData;
+        const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+        const uploaded = uploadedGames.find(g => g.filename === jarName);
+        if (uploaded && uploaded.data) {
+            console.log(`Main: Найдена загруженная игра ${jarName} в localStorage`);
+            const bin = atob(uploaded.data);
+            jarData = new ArrayBuffer(bin.length);
+            const u8 = new Uint8Array(jarData);
+            for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+            console.log(`Main: Декодировано ${jarData.byteLength} байт из localStorage`);
+        } else {
+            console.log(`Main: Загружаем ${jarName} через fetch...`);
+            const r = await fetch("./games/" + encodeURIComponent(jarName));
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            jarData = await r.arrayBuffer();
+            console.log(`Main: Загружено ${jarData.byteLength} байт`);
+        }
+
+        // Пишем во /str/<jarName> используя addFileToStrMount
+        const tempPath = "/str/" + jarName;
+        await addFileToStrMount(tempPath, new Uint8Array(jarData));
+        console.log(`Main: Файл записан во временный ${tempPath}`);
+
+        // Копируем JAR из /str/ во /files/ используя Java Files API
+        const destPath = "/files/" + jarName;
+        const destPathObj = await Paths.get(destPath);
+        try { await Files.deleteIfExists(destPathObj); } catch(e) { /* ignore */ }
+        await Files.copy(await Paths.get(tempPath), destPathObj);
+        console.log(`Main: Файл скопирован в ${destPath}`);
+
+        if (await Files.exists(await Paths.get(destPath))) {
+            const size = await Files.size(await Paths.get(destPath));
+            console.log(`Main: ✓ файл сохранён (${size} байт)`);
+            return true;
+        } else {
+            throw new Error("Копирование не удалось");
+        }
+        
+    } catch (e) {
+        console.error("Main: Ошибка копирования файла:", e.message);
+        return false;
     }
 }
 
