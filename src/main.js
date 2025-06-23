@@ -342,11 +342,11 @@ async function init() {
     console.log = function(...args) {
         const message = args.join(' ');
         // Пропускаем debug логи MIDI системы
-        if (message.includes('playerEOM called') || 
-            message.includes('onplayerstop found') ||
-            message.includes('MIDI sequence set, duration:')) {
-            return;
-        }
+        // if (message.includes('playerEOM called') || 
+        //     message.includes('onplayerstop found') ||
+        //     message.includes('MIDI sequence set, duration:')) {
+        //     return;
+        // }
         originalConsoleLog.apply(console, args);
     };
 
@@ -542,12 +542,12 @@ async function init() {
             const jarPath = "/files/" + jarName;
             const jarPathObj = await Paths.get(jarPath);
 
-            // Считаем приложение существующим, если есть либо директория /files/appId, либо сам JAR.
-            const appExists = (await Files.exists(appDirPath)) || (await Files.exists(jarPathObj));
-            console.log(`Main: Проверяем существование: dir=${await Files.exists(appDirPath)} jar=${await Files.exists(jarPathObj)} → appExists=${appExists}`);
+            // Считаем приложение существующим только если есть JAR файл в /files/
+            const jarExists = await Files.exists(jarPathObj);
+            console.log(`Main: Проверяем существование: jar=${jarExists}`);
             let initSuccess = false;
             
-            if (!appExists) {
+            if (!jarExists) {
                 // Приложение не существует – сразу переходим к ручной копии JAR в /files/
                 {
                     console.log("Main: Копируем JAR в /files...");
@@ -601,7 +601,7 @@ async function init() {
             }
             
             // Сохраняем дефолтные настройки только если приложение новое
-            if (initSuccess && !appExists) {
+            if (initSuccess && !jarExists) {
                 console.log("Main: Создаем дефолтные настройки для нового приложения...");
                 
                 // Удаляем старые настройки если есть, чтобы убрать поле fps
@@ -618,7 +618,7 @@ async function init() {
             }
             
             // Выбор режима запуска - всегда jar режим из /files/
-            if (initSuccess || appExists) {
+            if (initSuccess || jarExists) {
                 // Если копирование успешно или файл уже существует - используем JAR из /files/
                 args = ['jar', '/files/' + jarName];
                 console.log("Main: Используем JAR из /files/");
