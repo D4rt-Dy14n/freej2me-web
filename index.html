@@ -741,8 +741,8 @@
                     // Ищем MIDlet-Icon
                     const iconMatch = manifestText.match(/MIDlet-Icon:\s*([^\r\n]+)/i);
                     if (iconMatch) {
-                        const iconPath = iconMatch[1].trim();
-                        console.log(`[ICON DEBUG] Found MIDlet-Icon: ${iconPath}`);
+                        const iconPath = iconMatch[1].trim().replace(/^\//, ''); // Убираем ведущий слэш
+                        console.log(`[ICON DEBUG] Found MIDlet-Icon: ${iconPath} (cleaned)`);
                         const midletIcon = zip.file(iconPath);
                         if (midletIcon) {
                             const iconBase64 = await midletIcon.async('base64');
@@ -761,8 +761,8 @@
                         // Ищем .png в строке MIDlet-1
                         const pngMatch = midlet1Line.match(/([^,\s]+\.png)/i);
                         if (pngMatch) {
-                            const pngPath = pngMatch[1];
-                            console.log(`[ICON DEBUG] Found PNG in MIDlet-1: ${pngPath}`);
+                            const pngPath = pngMatch[1].replace(/^\//, ''); // Убираем ведущий слэш
+                            console.log(`[ICON DEBUG] Found PNG in MIDlet-1: ${pngPath} (cleaned)`);
                             const pngIcon = zip.file(pngPath);
                             if (pngIcon) {
                                 const iconBase64 = await pngIcon.async('base64');
