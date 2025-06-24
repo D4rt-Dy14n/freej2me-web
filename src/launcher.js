@@ -337,6 +337,8 @@ async function processGameFile(fileBuffer, fileName) {
 
     await launcherUtil.copyJar(new Int8Array(fileBuffer), jarFile);
     state.currentGame.jarFile = jarFile;
+    // Сохраняем размер JAR для machineId (10-битная часть Snowflake)
+    state.currentGame.jarSize = fileBuffer.byteLength;
 
     const AnalyserUtil = await lib.pl.zb3.freej2me.launcher.AnalyserUtil;
     const analysisResult = await AnalyserUtil.analyseFile(jarFile, fileName);
@@ -348,15 +350,22 @@ async function processGameFile(fileBuffer, fileName) {
     const loader = await MIDletLoader.getMIDletLoader(jarFile);
     state.lastLoader = loader;
 
-    // Если у loader нет appId, генерируем на основе имени файла
-    if (!(await loader.getAppId())) {
-        const genId = generateSnowflakeId(state.currentGame.jarSize);
+    // Используем существующий appId если он уже установлен (не перезаписываем сохранённые игры)
+    let finalAppId = await loader.getAppId();
+    if (!finalAppId) {
+        // machineId – 10-битное значение. Берём из jarSize, но если он ==0, fallback к длине файла (и на всякий случай & 0x3FF)
+        const machineId = (state.currentGame.jarSize || fileBuffer.byteLength || 1) & 0x3FF;
+        finalAppId = generateSnowflakeId(machineId);
+
         if (typeof loader.setAppId === 'function') {
-            await loader.setAppId(genId);
+            await loader.setAppId(finalAppId);
         } else {
-            loader.appId = genId;
+            loader.appId = finalAppId;
         }
     }
+
+    // Сохраняем окончательный ID в состоянии
+    state.currentGame.appId = finalAppId;
 
     setupNewGameManage(loader);
 }
@@ -399,18 +408,7 @@ async function doAddSaveGame() {
         const jsysProps = await kvToJava(state.currentGame.systemProperties);
 
         if (state.currentGame.jarFile) {
-            console.log("Launcher: Инициализируем новую игру...");
-            // генерируем snowflake-id
-            const newAppId = generateSnowflakeId(state.currentGame.jarSize);
-
-            if (typeof state.lastLoader.setAppId === 'function') {
-                await state.lastLoader.setAppId(newAppId);
-            } else {
-                state.lastLoader.appId = newAppId;
-            }
-
-            state.currentGame.appId = newAppId;
-
+            console.log("Launcher: Инициализируем новую игру со Snowflake ID", state.currentGame.appId);
             await launcherUtil.initApp(
                 state.currentGame.jarFile,
                 state.lastLoader, // loader with final уникальным appId
