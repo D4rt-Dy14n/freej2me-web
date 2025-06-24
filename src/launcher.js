@@ -350,7 +350,8 @@ async function processGameFile(fileBuffer, fileName) {
 
     // Если у loader нет appId, генерируем на основе имени файла
     if (!(await loader.getAppId())) {
-        const genId = generateSnowflakeId(state.currentGame.jarSize);
+        const machineId = state.currentGame.jarSize || 1; // Используем 1 как fallback
+        const genId = generateSnowflakeId(machineId);
         if (typeof loader.setAppId === 'function') {
             await loader.setAppId(genId);
         } else {
@@ -401,7 +402,8 @@ async function doAddSaveGame() {
         if (state.currentGame.jarFile) {
             console.log("Launcher: Инициализируем новую игру...");
             // генерируем snowflake-id
-            const newAppId = generateSnowflakeId(state.currentGame.jarSize);
+            const machineId = state.currentGame.jarSize || 1; // Используем 1 как fallback
+            const newAppId = generateSnowflakeId(machineId);
 
             if (typeof state.lastLoader.setAppId === 'function') {
                 await state.lastLoader.setAppId(newAppId);
