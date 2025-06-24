@@ -348,16 +348,16 @@ async function processGameFile(fileBuffer, fileName) {
     const loader = await MIDletLoader.getMIDletLoader(jarFile);
     state.lastLoader = loader;
 
-    // Если у loader нет appId, генерируем на основе имени файла
-    if (!(await loader.getAppId())) {
-        const machineId = state.currentGame.jarSize || 1; // Используем 1 как fallback
-        const genId = generateSnowflakeId(machineId);
-        if (typeof loader.setAppId === 'function') {
-            await loader.setAppId(genId);
-        } else {
-            loader.appId = genId;
-        }
+    // Генерируем финальный Snowflake-ID один раз и используем его далее
+    const machineId = state.currentGame.jarSize || 1;
+    const finalAppId = generateSnowflakeId(machineId);
+    if (typeof loader.setAppId === 'function') {
+        await loader.setAppId(finalAppId);
+    } else {
+        loader.appId = finalAppId;
     }
+    // Сохраняем в состоянии
+    state.currentGame.appId = finalAppId;
 
     setupNewGameManage(loader);
 }
@@ -400,19 +400,7 @@ async function doAddSaveGame() {
         const jsysProps = await kvToJava(state.currentGame.systemProperties);
 
         if (state.currentGame.jarFile) {
-            console.log("Launcher: Инициализируем новую игру...");
-            // генерируем snowflake-id
-            const machineId = state.currentGame.jarSize || 1; // Используем 1 как fallback
-            const newAppId = generateSnowflakeId(machineId);
-
-            if (typeof state.lastLoader.setAppId === 'function') {
-                await state.lastLoader.setAppId(newAppId);
-            } else {
-                state.lastLoader.appId = newAppId;
-            }
-
-            state.currentGame.appId = newAppId;
-
+            console.log("Launcher: Инициализируем новую игру со Snowflake ID", state.currentGame.appId);
             await launcherUtil.initApp(
                 state.currentGame.jarFile,
                 state.lastLoader, // loader with final уникальным appId
