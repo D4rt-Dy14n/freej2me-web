@@ -287,10 +287,8 @@ export class MediaPlayer extends EventTarget {
                 this.mediaElement.currentTime = 0;
                 // Полностью перезагружаем поток, чтобы браузер гарантированно заново декодировал звук
                 // (на некоторых мобильных браузерах без load() второй play игнорируется)
-                this.mediaElement.load();
-                console.log('[MediaPlayer.play] reset & load complete', {
-                    readyState: this.mediaElement.readyState
-                });
+                console.log('[MediaPlayer.play] Media needs reset, using reset() method');
+                await this.reset();
             }
         } catch (_) {
             // duration может быть NaN до полной загрузки; игнорируем
