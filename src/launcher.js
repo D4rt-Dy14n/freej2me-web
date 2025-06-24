@@ -337,6 +337,8 @@ async function processGameFile(fileBuffer, fileName) {
 
     await launcherUtil.copyJar(new Int8Array(fileBuffer), jarFile);
     state.currentGame.jarFile = jarFile;
+    // Сохраняем размер JAR для machineId (10-битная часть Snowflake)
+    state.currentGame.jarSize = fileBuffer.byteLength;
 
     const AnalyserUtil = await lib.pl.zb3.freej2me.launcher.AnalyserUtil;
     const analysisResult = await AnalyserUtil.analyseFile(jarFile, fileName);
@@ -348,15 +350,21 @@ async function processGameFile(fileBuffer, fileName) {
     const loader = await MIDletLoader.getMIDletLoader(jarFile);
     state.lastLoader = loader;
 
-    // Генерируем финальный Snowflake-ID один раз и используем его далее
-    const machineId = state.currentGame.jarSize || 1;
-    const finalAppId = generateSnowflakeId(machineId);
-    if (typeof loader.setAppId === 'function') {
-        await loader.setAppId(finalAppId);
-    } else {
-        loader.appId = finalAppId;
+    // Используем существующий appId если он уже установлен (не перезаписываем сохранённые игры)
+    let finalAppId = await loader.getAppId();
+    if (!finalAppId) {
+        // machineId – 10-битное значение. Берём из jarSize, но если он ==0, fallback к длине файла (и на всякий случай & 0x3FF)
+        const machineId = (state.currentGame.jarSize || fileBuffer.byteLength || 1) & 0x3FF;
+        finalAppId = generateSnowflakeId(machineId);
+
+        if (typeof loader.setAppId === 'function') {
+            await loader.setAppId(finalAppId);
+        } else {
+            loader.appId = finalAppId;
+        }
     }
-    // Сохраняем в состоянии
+
+    // Сохраняем окончательный ID в состоянии
     state.currentGame.appId = finalAppId;
 
     setupNewGameManage(loader);
