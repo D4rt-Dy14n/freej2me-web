@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title>FreeJ2ME - Game Manager</title>
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <script src="./lib/jszip.min.js"></script>
 
     <style>
         * {
@@ -136,29 +136,6 @@
         .game-header {
             padding: 20px;
             border-bottom: 1px solid #eee;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .game-icon-container {
-            flex-shrink: 0;
-        }
-
-        .game-icon {
-            width: 60px;
-            height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 30px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            border: 1px solid #ddd;
-        }
-
-        .game-info-container {
-            flex: 1;
         }
 
         .game-title {
@@ -439,8 +416,7 @@
         }
     </style>
 </head>
-  <body>
-    <div id="loading" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 18px; font-weight: bold;">Загрузка CheerpJ...</div>
+<body>
     <div class="container">
         <div class="header">
             <h1>🎮 FreeJ2ME</h1>
@@ -587,11 +563,35 @@
     <script>
         let currentGameProcess = null;
 
+        // === SNOWFLAKE ID GENERATOR ===
+        const snowflake = { lastTs: 0, seq: 0 };
+
+        function generateSnowflakeId(machineId = 0) {
+            const ts = Date.now(); // миллисекунды с эпохи, 41 бит хватает до 2081 года
+
+            if (ts === snowflake.lastTs) {
+                snowflake.seq = (snowflake.seq + 1) & 0xFFF; // 12-битный счётчик
+                if (snowflake.seq === 0) {
+                    // переполнение счётчика – ждём следующей миллисекунды
+                    while (Date.now() === ts) {/* spin */}
+                }
+            } else {
+                snowflake.seq = 0;
+                snowflake.lastTs = ts;
+            }
+
+            const mid = machineId & 0x3FF; // 10 бит
+
+            // Склеиваем поля вручную, нам не нужен BigInt
+            const idStr = `${ts.toString(36)}-${mid.toString(36)}-${snowflake.seq.toString(36)}`;
+            return idStr;
+        }
+
         // Инициализация при загрузке страницы
-        document.addEventListener('DOMContentLoaded', async function() {
+        document.addEventListener('DOMContentLoaded', function() {
             setupDragAndDrop();
             setupFileInput();
-            await loadGamesList();
+            loadGamesList();
         });
 
         // Настройка drag & drop
@@ -655,18 +655,30 @@
                 
                 // Сохраняем метаданные
                 const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                
+                // Используем размер файла как machineId для генерации уникального Snowflake ID
+                const machineId = (file.size || 1) & 0x3FF; // 10-битный machineId
                 const gameData = {
                     name: fileName.replace('.jar', ''),
                     filename: fileName,
+                    appId: generateSnowflakeId(machineId),
                     size: formatFileSize(file.size),
                     data: base64,
                     uploadDate: new Date().toISOString(),
                     isUploaded: true
                 };
                 
-                // Проверяем, не загружена ли уже эта игра
+                console.log('Generated appId for new game:', gameData.appId);
+                
+                // Проверяем, не загружена ли уже эта игра (по filename)
                 const existingIndex = uploadedGames.findIndex(g => g.filename === fileName);
                 if (existingIndex >= 0) {
+                    // Сохраняем appId если он уже был
+                    const oldAppId = uploadedGames[existingIndex].appId;
+                    if (oldAppId) {
+                        gameData.appId = oldAppId;
+                        console.log('Keeping existing appId:', oldAppId);
+                    }
                     uploadedGames[existingIndex] = gameData;
                     showNotification('Игра обновлена!', 'success');
                 } else {
@@ -675,7 +687,7 @@
                 }
                 
                 localStorage.setItem('uploadedGames', JSON.stringify(uploadedGames));
-                await loadGamesList(); // Перезагружаем список игр
+                loadGamesList(); // Перезагружаем список игр
                 document.getElementById('fileInput').value = ''; // Очищаем input
                 
             } catch (error) {
@@ -722,55 +734,81 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
-        // Извлечение иконки из JAR файла
-        async function extractIconFromJar(filename, isUploaded = false) {
+        // === ИКОНКИ ===
+        // Извлечение icon.png из JAR (ZIP) с кешированием в localStorage
+        async function extractIconFromJar(filename, isUploaded = false, appId = null) {
             try {
-                // Проверяем кэш
-                const cacheKey = `gameIcon_${filename}`;
-                const cachedIcon = localStorage.getItem(cacheKey);
-                if (cachedIcon) {
-                    return cachedIcon;
+                // Используем appId если есть, иначе filename для кэширования
+                const cacheKey = appId ? `gameIcon_${appId}` : `gameIcon_${filename}`;
+                const cached = localStorage.getItem(cacheKey);
+                if (cached) {
+                    return cached;
                 }
 
                 let jarData;
-                
                 if (isUploaded) {
-                    // Для загруженных игр берем данные из localStorage
-                    const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
-                    const game = uploadedGames.find(g => g.filename === filename);
-                    if (!game || !game.data) {
-                        return null;
-                    }
-                    jarData = base64ToArrayBuffer(game.data);
+                    const uploaded = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                    const game = uploaded.find(g => g.filename === filename);
+                    if (!game || !game.data) return null;
+                    jarData = Uint8Array.from(atob(game.data), c => c.charCodeAt(0)).buffer;
                 } else {
-                    // Для предустановленных игр загружаем через fetch
-                    const response = await fetch(`./games/${filename}`);
-                    if (!response.ok) {
-                        return null;
-                    }
-                    jarData = await response.arrayBuffer();
+                    const resp = await fetch(`./games/${encodeURIComponent(filename)}`);
+                    if (!resp.ok) return null;
+                    jarData = await resp.arrayBuffer();
                 }
 
-                // Распаковываем JAR (это ZIP архив)
-                const zip = new JSZip();
-                await zip.loadAsync(jarData);
+                const zip = await JSZip.loadAsync(jarData);
                 
-                // Ищем icon.png
-                const iconFile = zip.file("icon.png");
-                if (!iconFile) {
-                    return null;
+                // Проверяем MANIFEST для MIDlet-Icon
+                const manifest = zip.file('META-INF/MANIFEST.MF');
+                if (manifest) {
+                    const manifestText = await manifest.async('text');
+                    
+                    // Ищем MIDlet-Icon
+                    const iconMatch = manifestText.match(/MIDlet-Icon:\s*([^\r\n]+)/i);
+                    if (iconMatch) {
+                        const iconPath = iconMatch[1].trim().replace(/^\//, ''); // Убираем ведущий слэш
+                        const midletIcon = zip.file(iconPath);
+                        if (midletIcon) {
+                            const iconBase64 = await midletIcon.async('base64');
+                            const url = `data:image/png;base64,${iconBase64}`;
+                            localStorage.setItem(cacheKey, url);
+                            return url;
+                        }
+                    }
+                    
+                    // Ищем в MIDlet-1 любой .png файл
+                    const midlet1Match = manifestText.match(/MIDlet-1:\s*([^\r\n]+)/i);
+                    if (midlet1Match) {
+                        const midlet1Line = midlet1Match[1];
+                        // Ищем .png в строке MIDlet-1
+                        const pngMatch = midlet1Line.match(/([^,\s]+\.png)/i);
+                        if (pngMatch) {
+                            const pngPath = pngMatch[1].replace(/^\//, ''); // Убираем ведущий слэш
+                            const pngIcon = zip.file(pngPath);
+                            if (pngIcon) {
+                                const iconBase64 = await pngIcon.async('base64');
+                                const url = `data:image/png;base64,${iconBase64}`;
+                                localStorage.setItem(cacheKey, url);
+                                return url;
+                            }
+                        }
+                    }
                 }
                 
-                // Получаем данные иконки
-                const iconData = await iconFile.async("base64");
-                const iconDataUrl = `data:image/png;base64,${iconData}`;
+                // Fallback: ищем icon.png в корне
+                const iconFile = zip.file('icon.png');
+                if (iconFile) {
+                    const iconBase64 = await iconFile.async('base64');
+                    const url = `data:image/png;base64,${iconBase64}`;
+                    localStorage.setItem(cacheKey, url);
+                    return url;
+                }
                 
-                // Кэшируем иконку
-                localStorage.setItem(cacheKey, iconDataUrl);
-                
-                return iconDataUrl;
-            } catch (error) {
-                console.warn(`Не удалось извлечь иконку из ${filename}:`, error);
+                console.log(`[ICON DEBUG] No icon found for ${filename}`);
+                return null;
+            } catch (e) {
+                console.warn('extractIconFromJar failed', e);
                 return null;
             }
         }
@@ -787,12 +825,67 @@
                     console.warn('Не удалось загрузить предустановленные игры:', error);
                 }
                 
+                // Добавляем appId для предустановленных игр
+                preinstalledGames = preinstalledGames.map(game => ({
+                    ...game,
+                    appId: game.filename.replace(/\.jar$/i, ''),
+                    isUploaded: false
+                }));
+                
                 // Загружаем пользовательские игры из localStorage
-                const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                let uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                
+                // Добавляем appId для загруженных игр, если его нет
+                uploadedGames = uploadedGames.map(game => ({
+                    ...game,
+                    appId: game.appId || game.filename.replace(/\.jar$/i, ''),
+                    isUploaded: true
+                }));
                 
                 // Объединяем списки
-                const allGames = [...preinstalledGames, ...uploadedGames];
+                let allGames = [...preinstalledGames, ...uploadedGames];
                 
+                // Функция форматирования
+                function formatFileSize(bytes) {
+                    const k = 1024;
+                    const sizes = ['B', 'KB', 'MB', 'GB'];
+                    if (bytes === 0) return '0 B';
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+                }
+
+                // Получить размер JAR
+                async function getJarSize(filename, isUploaded) {
+                    try {
+                        if (isUploaded) {
+                            const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                            const game = uploadedGames.find(g => g.filename === filename);
+                            if (game && game.data) {
+                                const bytes = Math.floor((game.data.length * 3) / 4); // base64 -> bytes approx
+                                return formatFileSize(bytes);
+                            }
+                        } else {
+                            const headResp = await fetch(`./games/${filename}`, { method: 'HEAD' });
+                            let size = headResp.headers.get('content-length');
+                            if (size) return formatFileSize(parseInt(size, 10));
+                            const rangeResp = await fetch(`./games/${filename}`, { headers: { 'Range': 'bytes=0-0' } });
+                            size = rangeResp.headers.get('content-range');
+                            if (size) return formatFileSize(parseInt(size.split('/').pop(), 10));
+                        }
+                    } catch (e) {
+                        console.warn('Не удалось узнать размер файла', filename, e);
+                    }
+                    return '—';
+                }
+
+                // Заполняем отсутствующие размеры
+                allGames = await Promise.all(allGames.map(async g => {
+                    if (!g.size || g.size === 'undefined') {
+                        g.size = await getJarSize(g.filename, g.isUploaded);
+                    }
+                    return g;
+                }));
+
                 displayGamesList(allGames);
             } catch (error) {
                 console.error('Ошибка загрузки списка игр:', error);
@@ -801,7 +894,7 @@
         }
 
         // Отображение списка игр
-        async function displayGamesList(games) {
+        function displayGamesList(games) {
             const gamesList = document.getElementById('gamesList');
             
             if (games.length === 0) {
@@ -815,33 +908,25 @@
                 return;
             }
             
-            // Сначала показываем игры без иконок
             gamesList.innerHTML = games.map(game => `
-                <div class="game-card" data-filename="${game.filename}">
+                <div class="game-card" data-appid="${game.appId}">
                     <div class="game-header">
-                        <div class="game-icon-container">
-                            <div class="game-icon" id="icon-${game.filename.replace('.', '_')}">
-                                🎮
-                            </div>
-                        </div>
-                        <div class="game-info-container">
-                            <div class="game-title">${game.name} ${game.isUploaded ? '(Загружена)' : ''}</div>
-                            <div class="game-info">Размер: ${game.size}</div>
-                            ${game.uploadDate ? `<div class="game-info">Загружена: ${new Date(game.uploadDate).toLocaleDateString()}</div>` : ''}
-                        </div>
+                        <div class="game-title">${game.name} ${game.isUploaded ? '(Загружена)' : ''}</div>
+                        <div class="game-info">Размер: ${game.size}</div>
+                        ${game.uploadDate ? `<div class="game-info">Загружена: ${new Date(game.uploadDate).toLocaleDateString()}</div>` : ''}
                     </div>
                     <div class="game-actions">
-                        <button class="btn btn-primary" onclick="runGame('${game.filename}', ${game.isUploaded || false})">
+                        <button class="btn btn-primary" onclick="runGame('${game.appId}', ${game.isUploaded || false})">
                             ▶️ Запустить
                         </button>
-                        <button class="btn btn-secondary" onclick="openGameSettings('${game.filename}', '${game.name}', ${game.isUploaded || false})">
+                        <button class="btn btn-secondary" onclick="openGameSettings('${game.appId}', '${game.name}', ${game.isUploaded || false})">
                             ⚙️ Настройки
                         </button>
-                        <button class="btn btn-secondary" onclick="clearGameData('${game.filename}')">
+                        <button class="btn btn-secondary" onclick="clearGameData('${game.appId}')">
                             🗑️ Очистить данные
                         </button>
                         ${game.isUploaded ? `
-                            <button class="btn btn-danger" onclick="deleteUploadedGame('${game.filename}')">
+                            <button class="btn btn-danger" onclick="deleteUploadedGame('${game.appId}')">
                             ❌ Удалить
                         </button>
                         ` : ''}
@@ -849,32 +934,59 @@
                 </div>
             `).join('');
 
-            // Загружаем иконки асинхронно
+            // Подгружаем иконки асинхронно
             games.forEach(async (game) => {
-                const iconElement = document.getElementById(`icon-${game.filename.replace('.', '_')}`);
-                if (iconElement) {
-                    const iconUrl = await extractIconFromJar(game.filename, game.isUploaded);
-                    if (iconUrl) {
-                        iconElement.innerHTML = `<img src="${iconUrl}" alt="${game.name}" style="width: 60px; height: 60px; border-radius: 8px;">`;
-                    }
+                const header = gamesList.querySelector(`[data-appid="${game.appId}"] .game-header`);
+                if (!header) return;
+                const iconUrl = await extractIconFromJar(game.filename, game.isUploaded || false, game.appId);
+                if (iconUrl) {
+                    const img = document.createElement('img');
+                    img.src = iconUrl;
+                    img.alt = game.name;
+                    img.style.width = '60px';
+                    img.style.height = '60px';
+                    img.style.borderRadius = '8px';
+                    img.style.marginRight = '10px';
+                    header.prepend(img);
                 }
             });
         }
 
         // Запуск игры
-        async function runGame(filename, isUploaded = false) {
+        async function runGame(appId, isUploaded = false) {
             try {
-                // Извлекаем иконку для использования как favicon
-                const iconUrl = await extractIconFromJar(filename, isUploaded);
+                // Находим игру по appId для получения правильного filename
+                let jarFilename = appId + '.jar'; // default для предустановленных игр
+                
+                if (isUploaded) {
+                    const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
+                    const game = uploadedGames.find(g => g.appId === appId);
+                    if (game) {
+                        jarFilename = game.filename;
+                    }
+                } else {
+                    // Для предустановленных игр проверяем games.json
+                    try {
+                        const response = await fetch('./games/games.json');
+                        const preinstalledGames = await response.json();
+                        const game = preinstalledGames.find(g => g.filename.replace(/\.jar$/i, '') === appId);
+                        if (game) {
+                            jarFilename = game.filename;
+                        }
+                    } catch (e) {
+                        console.warn('Не удалось загрузить games.json для определения filename');
+                    }
+                }
+                
+                // Сохраняем favicon
+                const iconUrl = await extractIconFromJar(jarFilename, isUploaded, appId);
                 if (iconUrl) {
-                    // Сохраняем иконку для использования в run.html
                     sessionStorage.setItem('currentGameIcon', iconUrl);
                 }
                 
-                // Запускаем только с jar параметром - все настройки берутся из конфига
-                // Убираем uploaded=true из URL так как это не нужно
-                const runUrl = `./run.html?jar=${encodeURIComponent(filename)}`;
-                console.log('Запуск игры с минимальными параметрами:', runUrl);
+                // Используем jar режим вместо app режима для правильной загрузки файлов
+                const runUrl = `./run.html?jar=${encodeURIComponent(jarFilename)}`;
+                console.log('Запуск игры в jar режиме:', runUrl);
                 window.location.href = runUrl;
             } catch (error) {
                 console.error('Ошибка запуска игры:', error);
@@ -888,13 +1000,13 @@
         }
 
         // Очистка данных игры
-        async function clearGameData(filename) {
+        async function clearGameData(appId) {
             if (confirm('Очистить все данные игры? Это действие нельзя отменить.')) {
                 try {
                     // Очищаем localStorage для игры
                     const keys = Object.keys(localStorage);
                     keys.forEach(key => {
-                        if (key.includes(filename.replace('.jar', ''))) {
+                        if (key.includes(appId)) {
                             localStorage.removeItem(key);
                         }
                      });
@@ -907,18 +1019,18 @@
         }
 
         // Удаление загруженной игры
-        async function deleteUploadedGame(filename) {
+        async function deleteUploadedGame(appId) {
             if (confirm('Удалить игру? Это действие нельзя отменить.')) {
                 try {
                     const uploadedGames = JSON.parse(localStorage.getItem('uploadedGames') || '[]');
-                    const filteredGames = uploadedGames.filter(game => game.filename !== filename);
+                    const filteredGames = uploadedGames.filter(game => game.appId !== appId);
                     localStorage.setItem('uploadedGames', JSON.stringify(filteredGames));
                     
                     // Очищаем данные игры
-                    clearGameData(filename);
+                    clearGameData(appId);
                     
                         showNotification('Игра удалена', 'success');
-                    await loadGamesList(); // Перезагружаем список
+                    loadGamesList(); // Перезагружаем список
                 } catch (error) {
                     console.error('Ошибка:', error);
                     showNotification('Ошибка удаления игры', 'error');
@@ -960,16 +1072,16 @@
         };
 
         // Открытие настроек игры
-        function openGameSettings(filename, gameName, isUploaded) {
+        function openGameSettings(appId, gameName, isUploaded) {
             currentGameSettings = {
-                filename: filename,
+                appId: appId,
                 gameName: gameName,
                 isUploaded: isUploaded,
                 settings: { ...defaultGameSettings }
             };
 
             // Загружаем сохраненные настройки
-            const savedSettings = localStorage.getItem(`gameSettings_${filename}`);
+            const savedSettings = localStorage.getItem(`gameSettings_${appId}`);
             if (savedSettings) {
                 try {
                     currentGameSettings.settings = { ...defaultGameSettings, ...JSON.parse(savedSettings) };
@@ -1056,12 +1168,12 @@
             };
 
             // Сохраняем в localStorage для следующих запусков
-            localStorage.setItem(`gameSettings_${currentGameSettings.filename}`, JSON.stringify(settings));
+            localStorage.setItem(`gameSettings_${currentGameSettings.appId}`, JSON.stringify(settings));
 
             // Применяем настройки к запущенной игре (если есть)
             if (window.parent && window.parent.applyGameSettings) {
                 try {
-                    await window.parent.applyGameSettings(currentGameSettings.filename.replace('.jar', ''), settings);
+                    await window.parent.applyGameSettings(currentGameSettings.appId, settings);
                     showNotification('Настройки сохранены и применены к игре!', 'success');
                 } catch (error) {
                     console.warn('Не удалось применить настройки к запущенной игре:', error);
@@ -1097,50 +1209,6 @@
 
         // Функция runGame уже определена выше и не должна добавлять параметры в URL
         // Все настройки берутся из конфиг файлов в main.js
-    </script>
-    
-    <script src="./lib/jszip.min.js"></script>
-    <script src="./lib/cheerpj/loader.js" onload="console.log('📥 loader.js загружен');" onerror="console.error('❌ Ошибка загрузки loader.js');"></script>
-    <script type="module">
-        console.log("🚀 Загружаем CheerpJ локально...");
-        
-        // Простая диагностика браузера
-        const isChrome = navigator.userAgent.includes('Chrome');
-        const isSafari = navigator.userAgent.includes('Safari') && !navigator.userAgent.includes('Chrome');
-        console.log(`🔍 Браузер: ${isChrome ? 'Chrome' : (isSafari ? 'Safari' : 'Other')}`);
-        
-        // Функция ожидания CheerpJ
-        function waitForCheerpJ(maxWait = 5000) {
-            return new Promise((resolve, reject) => {
-                const startTime = Date.now();
-                
-                function check() {
-                    if (typeof window.cheerpjInit !== 'undefined') {
-                        console.log("✅ CheerpJ загружен и готов");
-                        resolve(true);
-                        return;
-                    }
-                    
-                    if (Date.now() - startTime > maxWait) {
-                        console.error("❌ Таймаут ожидания CheerpJ");
-                        reject(new Error('CheerpJ не загрузился в течение ' + maxWait + 'ms'));
-                        return;
-                    }
-                    
-                    // Проверяем каждые 100мс
-                    setTimeout(check, 100);
-                }
-                
-                check();
-            });
-        }
-        
-        // В index.html не загружаем main.js - он загружается только в run.html
-        waitForCheerpJ().then(() => {
-            console.log("✅ CheerpJ готов (index.html)");
-        }).catch(error => {
-            console.error("❌ Ошибка загрузки CheerpJ:", error);
-        });
     </script>
 </body>
 </html> 
