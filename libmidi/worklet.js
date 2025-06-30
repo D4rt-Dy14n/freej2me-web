@@ -1,3 +1,5 @@
+console.log('🔧 WORKLET.JS: Модуль загружается...');
+
 let glue = null;
 
 
@@ -161,6 +163,8 @@ class MidiPlayerProcessor extends AudioWorkletProcessor {
     constructor(...args) {
         super(...args);
 
+        console.log('🎵 Worklet.constructor: Инициализация MidiPlayerProcessor');
+
         this.alive = true; // basically duplicates truthiness of this.ps
         this.hasPlayer = false;
         this.playingFrameOffset = -1;
@@ -168,6 +172,7 @@ class MidiPlayerProcessor extends AudioWorkletProcessor {
         this.initBuffers(1024);
 
         createMsgHandler(this.port, (cmd, data) => {
+            console.log('🎵 Worklet.message: Получена команда ' + cmd, data);
             if (cmd == 'setSequence') {
                 return this.setSequence(data.buffer);
             } else if (cmd == 'stop') {
@@ -189,9 +194,14 @@ class MidiPlayerProcessor extends AudioWorkletProcessor {
             // other messages
         });
 
-        this.ps = glue.exports.midiplayer_create(globalThis.sampleRate);
-        this.hasPlayer = true;
-        this.isPlaying = false; // to track end of media
+        if (glue && glue.exports) {
+            this.ps = glue.exports.midiplayer_create(globalThis.sampleRate);
+            this.hasPlayer = true;
+            this.isPlaying = false; // to track end of media
+            console.log('✅ Worklet.constructor: MIDI плеер создан, ps=' + this.ps);
+        } else {
+            console.error('❌ Worklet.constructor: Glue не инициализирован!');
+        }
     }
 
     initBuffers(size) {
@@ -205,19 +215,41 @@ class MidiPlayerProcessor extends AudioWorkletProcessor {
     }
 
     play() {
+        console.log('🎵 Worklet.play: Запуск воспроизведения, ps=' + this.ps + ', hasPlayer=' + this.hasPlayer);
+        // ФИКС: Сбрасываем смещение кадров перед началом воспроизведения
         this.playingFrameOffset = -1;
-        glue.exports.midiplayer_play(this.ps);
+        
+        // Запускаем воспроизведение в MIDI движке
+        if (this.ps) {
+            glue.exports.midiplayer_play(this.ps);
+            console.log('🎵 Worklet.play: midiplayer_play вызван');
+        } else {
+            console.error('❌ Worklet.play: ps не инициализирован!');
+        }
+        
+        // Устанавливаем флаг воспроизведения
         this.isPlaying = true;
+        console.log('✅ Worklet.play: isPlaying=' + this.isPlaying);
     }
 
     loop(times) {
-        glue.exports.midiplayer_loop(this.ps, times);
+        console.log('🎵 Worklet.loop: times=' + times);
+        if (this.ps) {
+            glue.exports.midiplayer_loop(this.ps, times);
+        }
     }
 
     stop() {
-        glue.exports.midiplayer_stop(this.ps);
+        console.log('🎵 Worklet.stop: Остановка воспроизведения, isPlaying=' + this.isPlaying);
+        // ФИКС: Полная остановка с сбросом состояния
+        if (this.ps) {
+            glue.exports.midiplayer_stop(this.ps);
+        }
+        
+        // Сбрасываем флаги состояния
         this.isPlaying = false;
-
+        this.playingFrameOffset = -1;
+        console.log('✅ Worklet.stop: isPlaying=' + this.isPlaying);
     }
 
     getPosition() {
@@ -229,17 +261,41 @@ class MidiPlayerProcessor extends AudioWorkletProcessor {
     }
 
     setSequence(bytes) {
+        console.log('🎵 Worklet.setSequence: Получено ' + bytes.length + ' байт');
+        // ФИКС: Полностью сбрасываем состояние перед новой последовательностью
+        // Сначала останавливаем воспроизведение
+        if (this.isPlaying) {
+            console.log('🎵 Worklet.setSequence: Останавливаем воспроизведение');
+            if (this.ps) {
+                glue.exports.midiplayer_stop(this.ps);
+            }
+            this.isPlaying = false;
+        }
+        
+        // Сбрасываем смещение кадров
+        this.playingFrameOffset = -1;
+        
         const len = bytes.length || bytes.byteLength;
         const ptr = glue.malloc(len);
         glue.writeInto(ptr, bytes);
-        const ticks = glue.exports.midiplayer_set_sequence(this.ps, ptr, len);
-        glue.free(ptr);
+        
+        if (this.ps) {
+            console.log('🎵 Worklet.setSequence: Вызываем midiplayer_set_sequence');
+            const ticks = glue.exports.midiplayer_set_sequence(this.ps, ptr, len);
+            console.log('🎵 Worklet.setSequence: Получено ticks=' + ticks);
+            glue.free(ptr);
 
-        // it's not playing anymore, player was reset
-        this.isPlaying = false;
+            // После сброса последовательности плеер точно не играет
+            this.isPlaying = false;
+            this.playingFrameOffset = -1;
 
-        // ticks are not really duration.. see api again
-        return { duration: ticks };
+            console.log('✅ Worklet.setSequence: Последовательность установлена, ticks=' + ticks);
+            return { duration: ticks };
+        } else {
+            console.error('❌ Worklet.setSequence: ps не инициализирован!');
+            glue.free(ptr);
+            return { duration: 0 };
+        }
     }
 
     shortEvent(status, data1, data2) {
@@ -249,7 +305,7 @@ class MidiPlayerProcessor extends AudioWorkletProcessor {
     // always called, even if the node not connected
     // returning false causes the node to become permanently defunct
     process(inputs, outputs) {
-        if (this.hasPlayer) {
+        if (this.hasPlayer && this.ps) {
             const missedFrames = this.playingFrameOffset === -1 ? 0 : ((currentFrame - this.playingFrameOffset) | 0);
 
             const samples = outputs[0][0].length;
@@ -262,12 +318,21 @@ class MidiPlayerProcessor extends AudioWorkletProcessor {
             outputs[0][0].set(new Float32Array(glue.memoryBuffer, this.leftBuf, samples));
             outputs[0][1].set(new Float32Array(glue.memoryBuffer, this.rightBuf, samples));
 
-            // eom is only reported after reverb. but loops work properly
-
-            if (this.isPlaying && !playing) { // refers to audio output, not to the sequencer
+            // ФИКС: Улучшенная логика обработки end-of-media
+            // Отправляем событие только когда плеер должен играть, но не производит аудио
+            if (this.isPlaying && !playing) {
+                console.log('🎵 Worklet.process: End of media detected, isPlaying=' + this.isPlaying + ', playing=' + playing);
                 this.port.postMessage("end-of-media");
                 this.isPlaying = false;
+                this.playingFrameOffset = -1; // Сбрасываем для следующего воспроизведения
+                console.log('✅ Worklet.process: End-of-media отправлено');
             }
+            
+            const DEBUG = false; // выключить спам в консоли
+            if (DEBUG) console.log('🎵 Worklet.process: isPlaying=' + this.isPlaying + ', playing=' + playing + ', samples=' + samples);
+        } else {
+            if (!this.hasPlayer) console.error('❌ Worklet.process: hasPlayer=false');
+            if (!this.ps) console.error('❌ Worklet.process: ps не инициализирован');
         }
 
         this.playingFrameOffset = (currentFrame + outputs[0][0].length) | 0;

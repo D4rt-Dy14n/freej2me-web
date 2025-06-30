@@ -516,15 +516,17 @@ async function init() {
 
     let args;
 
+    // Всегда используем jar режим (app режим больше не поддерживается)
     if (sp.get('app')) {
+        // Backward compatibility: если передан app параметр, конвертируем в jar
         const appId = sp.get('app');
-        console.log(`Main: Запуск приложения ${appId} в app режиме`);
-        
-        // Загружаем настройки только из файла конфига
-        await loadSettingsFromConfig(appId, lib);
-        
-        args = ['app', appId];
-    } else {
+        const jarName = appId + '.jar';
+        console.log(`Main: Конвертируем app=${appId} в jar=${jarName} режим`);
+        sp.set('jar', jarName);
+        sp.delete('app');
+    }
+    
+    {
         // Используем LauncherUtil для инициализации JAR как приложения
         const jarName = sp.get('jar') || "game.jar";
         const appId = jarName.replace(/\.jar$/i, ''); // id без расширения
@@ -554,21 +556,9 @@ async function init() {
                 initSuccess = await copyJarToFiles(jarName, lib);
             }
             
-            // Сохраняем дефолтные настройки только если приложение новое
+            // В jar режиме не создаем структуру каталогов - настройки загружаются из localStorage
             if (initSuccess && !jarExists) {
-                console.log("Main: Создаем дефолтные настройки для нового приложения...");
-                
-                // Удаляем старые настройки если есть, чтобы убрать поле fps
-                try {
-                    const oldSettingsPath = `/files/${appId}/config/settings.conf`;
-                    const settingsFilePath = await Paths.get(oldSettingsPath);
-                    await Files.deleteIfExists(settingsFilePath);
-                    console.log("Main: Удалили старые настройки");
-                } catch (e) {
-                    console.log("Main: Старые настройки отсутствуют");
-                }
-                
-                await saveDefaultSettings(appId, lib, LauncherUtil);
+                console.log("Main: JAR скопирован в /files/, готов к запуску (настройки управляются через браузер)");
             }
             
             // Выбор режима запуска - всегда jar режим из /files/
@@ -616,31 +606,7 @@ async function init() {
     }
 }
 
-// Функция для загрузки настроек из конфига
-async function loadSettingsFromConfig(appId, lib) {
-    try {
-        console.log(`Main: Загружаем настройки для приложения ${appId} из конфига...`);
-        
-        const settingsPath = `/files/${appId}/config/settings.conf`;
-        const settingsBlob = await cjFileBlob(settingsPath);
-        
-        if (settingsBlob) {
-            const settingsContent = await settingsBlob.text();
-            console.log(`Main: Найдены сохраненные настройки: "${settingsContent}"`);
-            
-            if (settingsContent.trim()) {
-                console.log("Main: Настройки загружены из файла успешно");
-            } else {
-                console.log("Main: Файл настроек пустой - используем настройки по умолчанию без сохранения");
-            }
-        } else {
-            console.log("Main: Файл настроек не найден - используем настройки по умолчанию без сохранения");
-        }
-        
-    } catch (error) {
-        console.error("Main: Ошибка загрузки настроек из конфига:", error);
-    }
-}
+// В jar режиме настройки загружаются из localStorage через index.html
 
 // Функция для сохранения дефолтных настроек 
 async function saveDefaultSettings(appId, libOrLauncherUtil, LauncherUtil) {
@@ -698,27 +664,7 @@ async function saveDefaultSettings(appId, libOrLauncherUtil, LauncherUtil) {
         await launcherUtil.saveApp(appId, correctSettings, emptyAppProps, emptySysProps);
         console.log("Main: Дефолтные настройки сохранены");
         
-        // Проверяем что сохранилось и что нет старого поля fps
-        setTimeout(async () => {
-            try {
-                const newSettingsBlob = await cjFileBlob(`/files/${appId}/config/settings.conf`);
-                if (newSettingsBlob) {
-                    const newContent = await newSettingsBlob.text();
-                    console.log(`Main: Проверка сохранения - содержимое файла: "${newContent}"`);
-                    
-                    // Проверяем что нет старого поля fps
-                    if (newContent.includes('fps:')) {
-                        console.error("Main: ОШИБКА! В файле все еще есть старое поле fps!");
-                    } else {
-                        console.log("Main: ✓ Поле fps отсутствует, настройки корректны");
-                    }
-                } else {
-                    console.log("Main: Проверка сохранения - файл не найден!");
-                }
-            } catch (checkError) {
-                console.error("Main: Ошибка проверки сохранения:", checkError);
-            }
-        }, 2000);
+        console.log("Main: Дефолтные настройки сохранены и готовы к использованию");
         
     } catch (error) {
         console.error("Main: Ошибка сохранения дефолтных настроек:", error);

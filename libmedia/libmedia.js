@@ -93,6 +93,9 @@ export class MediaPlayer extends EventTarget {
 
         this.audioContext.resume();
 
+        // Флаг для отслеживания завершений
+        this.hasEndedOnce = false;
+
         this.addEventListener('playing', () => {
             this.state = 'STARTED';
         });
@@ -107,6 +110,8 @@ export class MediaPlayer extends EventTarget {
 
         this.addEventListener('ended', () => {
             this.state = 'PREFETCHED';
+            this.hasEndedOnce = true;
+            console.log('[MediaPlayer] ended event, setting hasEndedOnce=true', this.playerId);
             this.dispatchEvent(new Event('end-of-media'));
         });
 
@@ -170,6 +175,9 @@ export class MediaPlayer extends EventTarget {
                     this.dispatchEvent(new Event(e.type));
                 });
             });
+
+            // Добавляем логирование для отладки
+            this._ensureEventLogs();
 
             this.objectUrl = URL.createObjectURL(this.blob);
             this.mediaElement.src = this.objectUrl;
@@ -251,26 +259,53 @@ export class MediaPlayer extends EventTarget {
     }
 
     async play() {
-        console.log('🎵 MediaPlayer[' + this.playerId + ']: play() вызван, state:', this.state);
         if (!this.mediaElement) {
-            console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - нет mediaElement');
             return;
         }
 
         const elementInfo = this.mediaElement.src?.substring(0, 50) + '...';
 
-        if (!this.mediaElement.paused) {
-            // Звук уже играет, перезапускаем
-            console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - перезапуск, currentTime сброшен в 0');
+        console.log('[MediaPlayer.play] begin', {
+            id: this.playerId,
+            elementInfo,
+            paused: this.mediaElement.paused,
+            readyState: this.mediaElement.readyState,
+            currentTime: this.mediaElement.currentTime.toFixed(3),
+            duration: this.mediaElement.duration,
+            ended: this.mediaElement.ended
+        });
+
+        // Если элемент уже проигрывается ‑ перезапускаем.
+        // Если закончился и стоит на конце — тоже сбрасываем.
+        try {
+            const atEnd = this.mediaElement.currentTime >= (this.mediaElement.duration || 0) - 0.01;
+
+            if (!this.mediaElement.paused || atEnd || this.mediaElement.ended) {
+                // Останавливаем без генерации событий, затем ставим на начало
+                this.mediaElement.pause();
+                this.mediaElement.currentTime = 0;
+                // Полностью перезагружаем поток, чтобы браузер гарантированно заново декодировал звук
+                // (на некоторых мобильных браузерах без load() второй play игнорируется)
+                this.mediaElement.load();
+                console.log('[MediaPlayer.play] reset & load complete', {
+                    readyState: this.mediaElement.readyState
+                });
+            }
+        } catch (_) {
+            // duration может быть NaN до полной загрузки; игнорируем
             this.mediaElement.currentTime = 0;
         }
 
+        // Убеждаемся, что AudioContext активен (после блокировки браузером мог уйти в suspended)
+        console.log('[MediaPlayer.play] AC state before', this.audioContext.state);
+        try { if (this.audioContext.state === 'suspended') await this.audioContext.resume(); } catch(e) {}
+        console.log('[MediaPlayer.play] AC state after', this.audioContext.state);
+
         try {
-            console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - вызываем mediaElement.play()');
             await this.mediaElement.play();
-            console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - mediaElement.play() успешно');
+            console.log('[MediaPlayer.play] play() success');
         } catch (e) {
-            console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - ошибка:', e.name, e.message);
+            console.warn('[MediaPlayer.play] play() failed', e.name, e.message);
             if (e.name === 'NotAllowedError') {
                 // Пробуем проиграть без звука
                 const originalVolume = this.mediaElement.volume;
@@ -279,9 +314,8 @@ export class MediaPlayer extends EventTarget {
 
                 try {
                     await this.mediaElement.play();
-                    console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - воспроизведение без звука успешно');
                 } catch (e) {
-                    console.log('🎵 MediaPlayer[' + this.playerId + ']: play() - даже без звука не получилось');
+                    // Даже без звука не получилось
                 }
 
                 this.mediaElement.volume = originalVolume;
@@ -298,7 +332,6 @@ export class MediaPlayer extends EventTarget {
     }
 
     stop() {
-        console.log('🎵 MediaPlayer[' + this.playerId + ']: stop() вызван');
         if (this.mediaElement) {
             this.mediaElement.pause();
             this.mediaElement.currentTime = 0;
@@ -411,53 +444,73 @@ export class MediaPlayer extends EventTarget {
         });
     }
 
-    // Сброс mediaElement c пересозданием ObjectURL
+    // Сбрасывает mediaElement в рабочее состояние, создав новый ObjectURL
     reset() {
-        if (!this.mediaElement) return;
+        if (!this.mediaElement) return Promise.resolve();
+
+        this.hasEndedOnce = false;
 
         if (!this.blob) {
-            // Нет данных — переводим в UNREALIZED
-            this.mediaElement.pause();
-            if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
-            this.mediaElement.removeAttribute('src');
-            this.mediaElement.load();
+            try { this.mediaElement.pause(); } catch(_){}
             this.state = 'UNREALIZED';
-            return;
+            return Promise.resolve();
         }
 
-        // Остановка и подготовка
-        this.mediaElement.pause();
-        this.mediaElement.currentTime = 0;
+        try { this.mediaElement.pause(); } catch(_){}
+        if (this.sourceNode) { this.sourceNode.disconnect(); this.sourceNode = null; }
+        if (this.objectUrl) { URL.revokeObjectURL(this.objectUrl); this.objectUrl = null; }
+        if (this._pendingRecreateHandler && this.mediaElement) {
+            this.mediaElement.removeEventListener('loadeddata', this._pendingRecreateHandler);
+            this.mediaElement.removeEventListener('error', this._pendingRecreateHandler);
+        }
 
-        if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+        const isVideo = (this.contentType || '').startsWith('video/');
+        this.mediaElement = document.createElement(isVideo ? 'video' : 'audio');
+        ['playing','waiting','pause','ended','loadeddata','error'].forEach(evt => {
+            this.mediaElement.addEventListener(evt, e => this.dispatchEvent(new Event(e.type)));
+        });
+        this._eventsLogged = false;
+
         this.objectUrl = URL.createObjectURL(this.blob);
         this.mediaElement.src = this.objectUrl;
 
-        // Safari требует пересоздания sourceNode после load()
-        const recreateSourceNode = () => {
-            if (!this.audioContext || this.audioContext.state === 'closed') return;
-
+        if (!this.gainNode && this.audioContext && this.audioContext.state !== 'closed') {
             try {
-                if (this.sourceNode) this.sourceNode.disconnect();
-
-                if (!this.gainNode) {
-                    this.gainNode = this.audioContext.createGain();
-                    this.gainNode.gain.value = 1.0;
-                    this.gainNode.connect(this.destination ?? this.audioContext.destination);
-                }
-
+                this.gainNode = this.audioContext.createGain();
+                this.gainNode.gain.value = 1.0;
+                this.gainNode.connect(this.destination ?? this.audioContext.destination);
+            } catch (e) { console.warn('[MediaPlayer.reset] gain create fail', e); }
+        }
+        try {
+            if (this.audioContext && this.audioContext.state !== 'closed') {
                 this.sourceNode = this.audioContext.createMediaElementSource(this.mediaElement);
                 this.sourceNode.connect(this.gainNode ?? this.destination ?? this.audioContext.destination);
-            } catch (e) {
-                console.warn('MediaPlayer.reset: recreate sourceNode failed', e);
             }
-        };
+        } catch(e){console.warn('[MediaPlayer.reset] sourceNode fail', e)}
 
-        this.mediaElement.addEventListener('loadeddata', recreateSourceNode, { once: true });
+        return new Promise(resolve=>{
+            const cleanup=()=>{
+                this.mediaElement.removeEventListener('loadeddata', cleanup);
+                this.mediaElement.removeEventListener('error', cleanup);
+                this._pendingRecreateHandler=null;
+                resolve();
+            };
+            this._pendingRecreateHandler=cleanup;
+            this.mediaElement.addEventListener('loadeddata', cleanup,{once:true});
+            this.mediaElement.addEventListener('error', cleanup,{once:true});
+            setTimeout(()=>{console.warn('[MediaPlayer.reset] timeout');cleanup();},5000);
+            this.mediaElement.load();
+            this.state='PREFETCHED';
+        });
+    }
 
-        this.mediaElement.load();
-
-        this.state = 'PREFETCHED';
+    // Добавляем базовые логи на события ended/error (один раз)
+    _ensureEventLogs() {
+        if (this._eventsLogged) return;
+        this._eventsLogged = true;
+        if (!this.mediaElement) return;
+        this.mediaElement.addEventListener('ended', () => console.log('[MediaPlayer] ended', this.playerId));
+        this.mediaElement.addEventListener('error', (e) => console.error('[MediaPlayer] error', e));
     }
 }
 

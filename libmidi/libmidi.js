@@ -75,7 +75,6 @@ export class LibMidi {
         });
 
         this.initialized = true;
-        console.log('✅ LibMidi.init: LibMidi полностью инициализирован');
     }
 
     async close() {
@@ -88,11 +87,8 @@ export class LibMidi {
     }
 
     get midiPlayer() {
-        console.log('🎵 LibMidi.get midiPlayer: Запрос плеера, initialized=' + this.initialized);
         if (this.initialized && !this._midiPlayer) {
-            console.log('🎵 LibMidi.get midiPlayer: Создаем новый MIDIPlayer');
             this._midiPlayer = new MIDIPlayer(this.context, this.destination);
-            console.log('✅ LibMidi.get midiPlayer: MIDIPlayer создан', this._midiPlayer);
         } else if (!this.initialized) {
             console.warn('⚠️ LibMidi.get midiPlayer: LibMidi не инициализирован');
         } else {
@@ -176,20 +172,17 @@ export class MIDIPlayer extends EventTarget {
         console.log('🎵 MIDIPlayer.constructor: Создание плеера');
 
         MIDIPlayer.playerCount++;
-        this.playerId = MIDIPlayer.playerCount;
-        console.log('🎵 MIDIPlayer.constructor: playerId=' + this.playerId);
 
         if (!audioContext.audioWorklet || typeof AudioWorkletNode === 'undefined') {
             console.error('❌ MIDIPlayer.constructor: AudioWorklet не поддерживается');
             return;
         }
 
-        console.log('🎵 MIDIPlayer.constructor: Создаем gain узел');
+    
         this.gainNode = audioContext.createGain();
         this.gainNode.gain.value = 1;
         this.gainNode.connect(destination);
 
-        console.log('🎵 MIDIPlayer.constructor: Создаем worklet узел');
         this.node = new AudioWorkletNode(audioContext, 'midi-player', {
             outputChannelCount: [2]
         });
@@ -202,10 +195,6 @@ export class MIDIPlayer extends EventTarget {
             if (e.data?.replyFor) return; // these are for client.. should we use cancel?
 
             if (e.data === 'end-of-media') {
-                console.log('🎵 MIDIPlayer: End-of-media событие получено из worklet');
-                console.log('🎵 MIDIPlayer: Stack trace:', new Error().stack);
-                console.log('🎵 MIDIPlayer: Автоматически сбрасываем состояние для повторного воспроизведения');
-                
                 const player = weakThis.deref();
                 if (player) {
                     // Отмечаем, что последовательность дошла до конца
@@ -220,7 +209,6 @@ export class MIDIPlayer extends EventTarget {
         this.duration = 0;
 
         MIDIPlayer._finalizer.register(this, [this.client, this.node, this.gainNode], this);
-        console.log('✅ MIDIPlayer.constructor: Плеер создан успешно');
 
         // Флаг, указывающий что плеер уже дошёл до конца последовательности хотя бы один раз
         this._hasEndedOnce = false;
@@ -232,31 +220,24 @@ export class MIDIPlayer extends EventTarget {
     }
 
     async setSequence(buffer) {
-        console.log('🎵 MIDIPlayer.setSequence: Получен buffer', buffer.byteLength + ' байт');
         // Кешируем буфер, чтобы можно было воспроизвести его повторно без явного вызова из Java
         this._lastSequence = buffer.slice ? buffer.slice(0) : buffer; // ArrayBuffer имеет slice
         // ФИКС: Правильно останавливаем и сбрасываем плеер перед новой последовательностью
         // Важно: все команды должны выполняться последовательно с ожиданием
-        console.log('🎵 MIDIPlayer.setSequence: Останавливаем предыдущее воспроизведение');
         await this.send({cmd: "stop"});
-        console.log('🎵 MIDIPlayer.setSequence: Сбрасываем циклы');
         await this.send({cmd: "loop", times: 0});
         
         // Небольшая задержка для завершения остановки на низком уровне
         await new Promise(resolve => setTimeout(resolve, 10));
         
-        console.log('🎵 MIDIPlayer.setSequence: Отправляем новую последовательность в worklet');
         const { duration } = await this.send({cmd: "setSequence", buffer});
         this.duration = duration;
-        console.log('✅ MIDIPlayer.setSequence: Последовательность установлена, duration=' + duration);
     }
 
     play() {
-        console.log('🎵 MIDIPlayer.play: Запуск воспроизведения');
-        console.log('🎵 MIDIPlayer.play: Stack trace:', new Error().stack);
+       
 
         if (this._hasEndedOnce) {
-            console.log('🎵 MIDIPlayer.play: _hasEndedOnce=true – переустанавливаем последовательность');
             this._hasEndedOnce = false;
 
             // Безопасный ресет: stop → setSequence(последний_буфер) → play
@@ -265,7 +246,6 @@ export class MIDIPlayer extends EventTarget {
                 try {
                     await this.send({cmd: "stop"});
                     if (this._lastSequence) {
-                        console.log('🎵 MIDIPlayer.play: Отправляем setSequence повторно');
                         await this.send({cmd: "setSequence", buffer: this._lastSequence});
                     } else {
                         await this.send({cmd: "seek", pos: 0});
@@ -278,19 +258,14 @@ export class MIDIPlayer extends EventTarget {
         } else {
             this.send({cmd: "play"});
         }
-
-        console.log('✅ MIDIPlayer.play: Команда отправлена в worklet');
     }
 
     loop(times) {
-        console.log('🎵 MIDIPlayer.loop: times=' + times);
         this.send({cmd: "loop", times});
     }
 
     stop() {
-        console.log('🎵 MIDIPlayer.stop: Остановка воспроизведения');
         this.send({cmd: "stop"});
-        console.log('✅ MIDIPlayer.stop: Команда отправлена в worklet');
     }
 
     shortEvent(status, data1, data2) {
