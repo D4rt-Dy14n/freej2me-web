@@ -1,109 +1,5 @@
-// Детекция браузера
-function isChrome() {
-    return navigator.userAgent.includes('Chrome') && !navigator.userAgent.includes('Edg');
-}
-
-// Динамическая загрузка CheerpJ
-async function loadCheerpJ() {
-    // Проверяем, загружен ли уже CheerpJ
-    if (typeof window.cheerpjInit !== 'undefined') {
-        console.log('✅ CheerpJ уже загружен');
-        return true;
-    }
-
-    const loadScript = (src) => {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = () => {
-                console.log('✅ CheerpJ loader загружен из:', src);
-                resolve();
-            };
-            script.onerror = () => {
-                console.error('❌ Ошибка загрузки CheerpJ loader из:', src);
-                reject(new Error(`Failed to load script from ${src}`));
-            };
-            document.head.appendChild(script);
-        });
-    };
-
-    // Для Chrome используем только локальную версию из-за проблем с внешними ресурсами
-    let cheerpjUrls;
-    if (isChrome()) {
-        console.log('🔍 Chrome обнаружен - используем только локальную версию CheerpJ');
-        cheerpjUrls = ['./lib/cheerpj/loader.js'];
-    } else {
-        console.log('🔍 Не-Chrome браузер - пробуем CDN с фоллбэком');
-        cheerpjUrls = [
-            'https://cjrtnc.leaningtech.com/4.0/loader.js', // Официальный CDN (4.0 более стабильная)
-            'https://cdn.jsdelivr.net/npm/cheerpj@4.0/loader.js', // Альтернативный CDN
-            './lib/cheerpj/loader.js' // Локальная версия как фоллбэк
-        ];
-    }
-
-    for (const url of cheerpjUrls) {
-        try {
-            console.log('🔄 Попытка загрузки CheerpJ из:', url);
-            await loadScript(url);
-            
-            // Проверяем, что cheerpjInit действительно загружен
-            if (typeof window.cheerpjInit !== 'undefined') {
-                console.log('✅ CheerpJ успешно загружен из:', url);
-                return true;
-            } else {
-                console.warn('⚠️ Скрипт загружен, но cheerpjInit не найден в:', url);
-            }
-        } catch (error) {
-            console.warn('⚠️ Не удалось загрузить CheerpJ из:', url, error.message);
-            continue;
-        }
-    }
-
-    throw new Error('Не удалось загрузить CheerpJ ни из одного источника');
-}
-
-// Инициализация CheerpJ с настройками для Chrome
-async function initCheerpJForLauncher() {
-    try {
-        console.log('🔄 Инициализация CheerpJ для launcher...');
-        
-        // Минимальные настройки для стабильности
-        const cheerpjConfig = {
-            cjPath: "/freej2me-web/lib/cheerpj/",
-            enableDebug: false,
-            clipboardMode: 'system'
-        };
-
-        // Дополнительные настройки для Chrome при использовании локальной версии
-        if (isChrome()) {
-            console.log('🔧 Launcher: Применяем специальные настройки для Chrome с локальной JRE');
-            cheerpjConfig.wasmPath = "/freej2me-web/lib/cheerpj/";
-            cheerpjConfig.appletMode = false;
-            cheerpjConfig.preloadVm = true;
-            // Настройки для предотвращения ошибок WASM с float/int
-            cheerpjConfig.wasmHeapSize = 134217728; // 128MB
-            cheerpjConfig.wasmStackSize = 1048576;  // 1MB
-            cheerpjConfig.strictFloats = false;    // Разрешаем менее строгую обработку float
-            cheerpjConfig.enableJIT = false;       // Отключаем JIT компиляцию
-            cheerpjConfig.safeFloats = true;       // Безопасная обработка float
-            cheerpjConfig.integerOverflow = 'wrap'; // Обработка переполнения целых чисел
-            cheerpjConfig.useBoundaryChecks = false; // Отключаем boundary checks для производительности
-            
-            // JRE файлы теперь лежат в правильном месте, дополнительная настройка не нужна
-            console.log('📦 Launcher: JRE файлы доступны по стандартному пути');
-        }
-
-        await window.cheerpjInit(cheerpjConfig);
-        console.log('✅ CheerpJ инициализирован успешно для launcher');
-        return true;
-    } catch (error) {
-        console.error('❌ Ошибка инициализации CheerpJ для launcher:', error);
-        throw error;
-    }
-}
-
 // note that we can only call java stuff if thread not running..
-const cheerpjWebRoot = '/app';
+const cheerpjWebRoot = '.';
 
 const emptyIcon = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
 
@@ -111,50 +7,43 @@ let lib = null, launcherUtil = null;
 let state = {
     games: [],
     currentGame: null,
-    editedGameId: null,
     uploadedJars: 0,
 };
 let defaultSettings = {};
+
+// ===== Snowflake-style ID generator =====
+const snowflake = { lastTs: 0, seq: 0 };
+
+function generateSnowflakeId(machineId = 0) {
+    const ts = Date.now(); // миллисекунды с эпохи, 41 бит хватает до 2081 года
+
+    if (ts === snowflake.lastTs) {
+        snowflake.seq = (snowflake.seq + 1) & 0xFFF; // 12-битный счётчик
+        if (snowflake.seq === 0) {
+            // переполнение счётчика – ждём следующей миллисекунды
+            while (Date.now() === ts) {/* spin */}
+        }
+    } else {
+        snowflake.seq = 0;
+        snowflake.lastTs = ts;
+    }
+
+    const mid = machineId & 0x3FF; // 10 бит
+
+    // Склеиваем поля вручную, нам не нужен BigInt
+    const idStr = `${ts.toString(36)}-${mid.toString(36)}-${snowflake.seq.toString(36)}`;
+    return idStr;
+}
 
 async function main() {
     try {
         console.log("Launcher: Начинаем инициализацию...");
         document.getElementById("loading").textContent = "Загрузка CheerpJ...";
         
-        // Перехватываем fetch запросы к JRE файлам и возвращаем пустые успешные ответы
-        const originalFetch = window.fetch;
-        window.fetch = function(...args) {
-            const url = args[0];
-            if (typeof url === 'string' && url.includes('/jre/lib/') && url.endsWith('.jar')) {
-                console.log('🚫 Launcher: Перехватываем запрос к JRE файлу:', url);
-                // Возвращаем пустой JAR файл (ZIP с минимальным содержимым)
-                const emptyJarBytes = new Uint8Array([
-                    0x50, 0x4B, 0x03, 0x04, // ZIP signature
-                    0x14, 0x00, 0x00, 0x00, 0x08, 0x00, // ZIP header
-                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // timestamps
-                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sizes
-                    0x50, 0x4B, 0x05, 0x06, // End of central directory
-                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00
-                ]);
-                
-                return Promise.resolve(new Response(emptyJarBytes, {
-                    status: 200,
-                    statusText: 'OK',
-                    headers: {
-                        'Content-Type': 'application/java-archive',
-                        'Content-Length': emptyJarBytes.length.toString()
-                    }
-                }));
-            }
-            return originalFetch.apply(this, args);
-        };
-
-        console.log("Launcher: Динамически загружаем CheerpJ...");
-        await loadCheerpJ();
-        
-        console.log("Launcher: Инициализируем CheerpJ с настройками для Chrome...");
-        await initCheerpJForLauncher();
+        console.log("Launcher: Инициализируем CheerpJ...");
+        await cheerpjInit({
+            enableDebug: false
+        });
 
         console.log("Launcher: Загружаем JAR библиотеку...");
         lib = await cheerpjRunLibrary(cheerpjWebRoot+"/freej2me-web.jar");
@@ -433,54 +322,10 @@ function fillGamesList(games) {
         link.appendChild(info);
         item.appendChild(link);
 
-        const manageButton = document.createElement("button");
-        manageButton.className = "manage-btn";
-        manageButton.textContent = "Управление";
-        manageButton.onclick = () => openEditGame(game);
-        item.appendChild(manageButton);
-
         container.appendChild(item);
     }
 }
 
-function setupAddMode() {
-    if (!confirmDiscard()) {
-        return;
-    }
-    state.currentGame = {
-        icon: emptyIcon,
-        settings: { ...defaultSettings },
-        appProperties: {},
-        systemProperties: {},
-    };
-
-    document.getElementById("add-edit-text").textContent = "➕ Добавить новую игру";
-
-    document.getElementById("file-input-step").style.display = "";
-    document.getElementById("file-input-loading").style.display = "none";
-    document.getElementById("file-input-jad-step").style.display = "none";
-    document.getElementById("add-manage-step").style.display = "none";
-
-    document.getElementById("game-file-input").disabled = false;
-    document.getElementById("game-file-input").value = null;
-
-    document.getElementById("game-file-input").onchange = (e) => {
-        // read file to arraybuffer
-        const file = e.target.files[0];
-        if (file) {
-            document.getElementById("game-file-input").disabled = true;
-            document.getElementById("file-input-step").style.display = "none";
-            document.getElementById("file-input-loading").style.display = "";
-
-            const reader = new FileReader();
-            reader.onload = async () => {
-                const arrayBuffer = reader.result;
-                await processGameFile(arrayBuffer, file.name);
-            };
-            reader.readAsArrayBuffer(file);
-        }
-    };
-}
 
 async function processGameFile(fileBuffer, fileName) {
     const MIDletLoader = await lib.org.recompile.mobile.MIDletLoader;
@@ -492,6 +337,8 @@ async function processGameFile(fileBuffer, fileName) {
 
     await launcherUtil.copyJar(new Int8Array(fileBuffer), jarFile);
     state.currentGame.jarFile = jarFile;
+    // Сохраняем размер JAR для machineId (10-битная часть Snowflake)
+    state.currentGame.jarSize = fileBuffer.byteLength;
 
     const AnalyserUtil = await lib.pl.zb3.freej2me.launcher.AnalyserUtil;
     const analysisResult = await AnalyserUtil.analyseFile(jarFile, fileName);
@@ -503,41 +350,24 @@ async function processGameFile(fileBuffer, fileName) {
     const loader = await MIDletLoader.getMIDletLoader(jarFile);
     state.lastLoader = loader;
 
-    if (!(await loader.getAppId())) {
-        document.getElementById("file-input-step").style.display = "";
-        document.getElementById("file-input-loading").style.display = "none";
-        document.getElementById("file-input-jad-step").style.display = "";
-        document.getElementById("upload-descriptor-file-input").value = null;
+    // Используем существующий appId если он уже установлен (не перезаписываем сохранённые игры)
+    let finalAppId = await loader.getAppId();
+    if (!finalAppId) {
+        // machineId – 10-битное значение. Берём из jarSize, но если он ==0, fallback к длине файла (и на всякий случай & 0x3FF)
+        const machineId = (state.currentGame.jarSize || fileBuffer.byteLength || 1) & 0x3FF;
+        finalAppId = generateSnowflakeId(machineId);
 
-        document.getElementById("upload-descriptor-file-input").onchange = (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                document.getElementById("file-input-step").style.display = "none";
-                document.getElementById("file-input-jad-step").style.display = "none";
-                document.getElementById("file-input-loading").style.display = "";
-
-                const reader = new FileReader();
-                reader.onload = async () => {
-                    const arrayBuffer = reader.result;
-                    await launcherUtil.augementLoaderWithJAD(
-                        loader,
-                        new Int8Array(arrayBuffer)
-                    );
-
-                    if (await loader.getAppId()) {
-                        setupNewGameManage(loader);
-                    }
-                };
-                reader.readAsArrayBuffer(file);
-            }
-        };
-
-        document.getElementById('continue-without-jad').onclick = () => {
-            continueWithoutJAD(loader, fileName);
-        };
-    } else {
-        setupNewGameManage(loader);
+        if (typeof loader.setAppId === 'function') {
+            await loader.setAppId(finalAppId);
+        } else {
+            loader.appId = finalAppId;
+        }
     }
+
+    // Сохраняем окончательный ID в состоянии
+    state.currentGame.appId = finalAppId;
+
+    setupNewGameManage(loader);
 }
 
 function fillGuessedSettings(analysisResult, app) {
@@ -551,14 +381,6 @@ function fillGuessedSettings(analysisResult, app) {
     }
 }
 
-async function continueWithoutJAD(loader, origName) {
-    // if we're here then need fallback name
-    await launcherUtil.ensureAppId(loader, origName);
-    loader.name = await loader.getAppId();
-
-    setupNewGameManage(loader);
-}
-
 async function setupNewGameManage(loader) {
     state.currentGame.appId = await loader.getAppId();
     state.currentGame.name = loader.name || state.currentGame.appId;
@@ -568,217 +390,6 @@ async function setupNewGameManage(loader) {
         : emptyIcon;
 
     await javaToKv(loader.properties, state.currentGame.appProperties);
-
-    setupAddManageGame(state.currentGame, true);
-}
-
-async function setupAddManageGame(app, isAdding) {
-    document.getElementById("file-input-step").style.display = "none";
-    document.getElementById("file-input-jad-step").style.display = "none";
-    document.getElementById("file-input-loading").style.display = "none";
-    document.getElementById("add-manage-step").style.display = "";
-
-    // Создаем динамический UI для управления игрой
-    const manageStep = document.getElementById("add-manage-step");
-    manageStep.innerHTML = `
-        <div style="display: flex; align-items: center; margin-bottom: 30px; padding: 20px; background: white; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
-            <img class="preview-icon" src="${app.icon || emptyIcon}" style="width: 64px; height: 64px; border-radius: 12px; margin-right: 20px; object-fit: cover;">
-            <div>
-                <div class="preview-name" style="font-size: 1.3em; font-weight: 600; margin-bottom: 5px;">${app.name}</div>
-                <div style="color: #666;">J2ME игра</div>
-            </div>
-        </div>
-
-        <div id="preview-controls" style="display: ${isAdding ? "none" : ""}; margin-bottom: 20px;">
-            <button id="uninstall-btn" class="btn btn-outline" style="background: #dc3545; color: white; border-color: #dc3545; margin-right: 10px;">🗑️ Удалить игру</button>
-            <button id="wipe-data-btn" class="btn btn-outline">🧹 Очистить данные</button>
-        </div>
-
-        <div style="background: linear-gradient(135deg, #f8f9ff 0%, #e8f4fd 100%); padding: 20px; border-radius: 15px; margin-bottom: 20px;">
-            <h3 style="margin: 0 0 20px 0; color: #333;">⚙️ Настройки игры</h3>
-            
-            <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Тип телефона:</label>
-                <select id="phoneType" class="file-input">
-                    <option value="standard">Стандартный</option>
-                </select>
-            </div>
-
-            <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Размер экрана:</label>
-                <select id="screenSize" class="file-input">
-                    <option value="128x128">128x128</option>
-                    <option value="128x160">128x160</option>
-                    <option value="176x220">176x220</option>
-                    <option value="240x320">240x320</option>
-                    <option value="320x240">320x240</option>
-                    <option value="custom">Пользовательский</option>
-                </select>
-            </div>
-
-            <div id="edit-custom-size-inputs" style="display: none; margin-bottom: 15px;">
-                <div style="display: flex; gap: 10px;">
-                    <div style="flex: 1;">
-                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Ширина:</label>
-                        <input type="number" id="customWidth" class="file-input" value="240">
-                    </div>
-                    <div style="flex: 1;">
-                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Высота:</label>
-                        <input type="number" id="customHeight" class="file-input" value="320">
-                    </div>
-                </div>
-            </div>
-
-            <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Размер шрифта:</label>
-                <select id="fontSize" class="file-input">
-                    <option value="small">Маленький</option>
-                    <option value="medium" selected>Средний</option>
-                    <option value="large">Большой</option>
-                </select>
-            </div>
-
-            <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Формат графики:</label>
-                <select id="dgFormat" class="file-input">
-                    <option value="16bit" selected>16-bit</option>
-                    <option value="32bit">32-bit</option>
-                </select>
-            </div>
-
-            <div style="margin-bottom: 20px;">
-                <h4 style="margin: 0 0 15px 0; color: #333;">Дополнительные опции:</h4>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                    <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: white; border-radius: 8px; cursor: pointer;">
-                        <input type="checkbox" name="enableSound" checked> Звук
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: white; border-radius: 8px; cursor: pointer;">
-                        <input type="checkbox" name="rotate"> Поворот экрана
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: white; border-radius: 8px; cursor: pointer;">
-                        <input type="checkbox" name="forceFullscreen"> Полный экран
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: white; border-radius: 8px; cursor: pointer;">
-                        <input type="checkbox" name="textureDisableFilter"> Без фильтра текстур
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: white; border-radius: 8px; cursor: pointer; grid-column: span 2;">
-                        <input type="checkbox" name="queuedPaint" checked> Оптимизация отрисовки
-                    </label>
-                </div>
-            </div>
-
-            <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Дополнительный JAD файл (опционально):</label>
-                <input type="file" id="aux-jad-file-input" class="file-input" accept=".jad">
-            </div>
-        </div>
-
-        <div style="background: white; padding: 20px; border-radius: 15px; margin-bottom: 20px;">
-            <h3 style="margin: 0 0 15px 0; color: #333;">📋 Свойства приложения</h3>
-            <textarea id="editAppProps" class="file-input" rows="4" placeholder="key: value" style="resize: vertical; font-family: monospace;"></textarea>
-        </div>
-
-        <div style="background: white; padding: 20px; border-radius: 15px; margin-bottom: 20px;">
-            <h3 style="margin: 0 0 15px 0; color: #333;">🔧 Системные свойства</h3>
-            <textarea id="editSysProps" class="file-input" rows="4" placeholder="key: value" style="resize: vertical; font-family: monospace;"></textarea>
-        </div>
-
-        <button id="add-save-button" class="save-button">${isAdding ? "Добавить игру" : "Сохранить изменения"}</button>
-    `;
-
-    if (!isAdding) {
-        document.getElementById("uninstall-btn").onclick = (e) => {
-            if (!confirm(`Вы хотите удалить игру "${app.name}"?`)) {
-                return;
-            }
-
-            document.getElementById("uninstall-btn").disabled = true;
-            doUninstallGame(app.appId);
-        };
-
-        document.getElementById("wipe-data-btn").onclick = (e) => {
-            if (!confirm(`Вы хотите очистить данные игры "${app.name}"?`)) {
-                return;
-            }
-
-            document.getElementById("wipe-data-btn").disabled = true;
-            doWipeData(app.appId);
-        };
-    }
-
-    const jadFileInput = document.getElementById("aux-jad-file-input");
-    jadFileInput.onchange = handleOptionalJadFileUpload;
-
-    const phoneType = document.getElementById("phoneType");
-    phoneType.value = app.settings.phone || "standard";
-
-    const screenSize = document.getElementById("screenSize");
-    const sizeStr = `${app.settings.width || 240}x${app.settings.height || 320}`;
-    if ([...screenSize.options].some((opt) => opt.value === sizeStr)) {
-        screenSize.value = sizeStr;
-    } else {
-        screenSize.value = "custom";
-    }
-    document.getElementById("customWidth").value = app.settings.width || 240;
-    document.getElementById("customHeight").value = app.settings.height || 320;
-    screenSize.onchange = adjustScreenSizeInput;
-    adjustScreenSizeInput();
-
-    const fontSize = document.getElementById("fontSize");
-    fontSize.value = app.settings.fontSize || "medium";
-
-    const dgFormat = document.getElementById("dgFormat");
-    dgFormat.value = app.settings.dgFormat || "16bit";
-
-    document.querySelector('input[name="enableSound"]').checked = app.settings.sound !== "off";
-    document.querySelector('input[name="rotate"]').checked = app.settings.rotate === "on";
-    document.querySelector('input[name="forceFullscreen"]').checked = app.settings.forceFullscreen === "on";
-    document.querySelector('input[name="textureDisableFilter"]').checked = app.settings.textureDisableFilter === "on";
-    document.querySelector('input[name="queuedPaint"]').checked = app.settings.queuedPaint !== "off";
-
-    const appPropsTextarea = document.getElementById("editAppProps");
-    appPropsTextarea.value = Object.entries(app.appProperties || {})
-        .map(([key, value]) => `${key}: ${value}`)
-        .join("\n");
-
-    const sysPropsTextarea = document.getElementById("editSysProps");
-    sysPropsTextarea.value = Object.entries(app.systemProperties || {})
-        .map(([key, value]) => `${key}: ${value}`)
-        .join("\n");
-
-    document.getElementById("add-save-button").onclick = doAddSaveGame;
-}
-
-function adjustScreenSizeInput() {
-    document.getElementById("edit-custom-size-inputs").style.display =
-        document.getElementById("screenSize").value === "custom" ? "" : "none";
-}
-
-function handleOptionalJadFileUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    document.getElementById("add-manage-step").style.display = "none";
-    document.getElementById("file-input-loading").style.display = "";
-
-    // read as text?
-    const reader = new FileReader();
-    reader.onload = async () => {
-        // this won't affect the name/id
-        readToKv(reader.result, state.currentGame.appProperties);
-
-        const appPropsTextarea = document.getElementById("editAppProps");
-        appPropsTextarea.value = Object.entries(
-            state.currentGame.appProperties || {}
-        )
-            .map(([key, value]) => `${key}: ${value}`)
-            .join("\n");
-    };
-    reader.onloadend = () => {
-        document.getElementById("add-manage-step").style.display = "";
-        document.getElementById("file-input-loading").style.display = "none";
-    };
-    reader.readAsText(file);
 }
 
 async function doAddSaveGame() {
@@ -797,11 +408,10 @@ async function doAddSaveGame() {
         const jsysProps = await kvToJava(state.currentGame.systemProperties);
 
         if (state.currentGame.jarFile) {
-            console.log("Launcher: Инициализируем новую игру...");
-            // new game
+            console.log("Launcher: Инициализируем новую игру со Snowflake ID", state.currentGame.appId);
             await launcherUtil.initApp(
                 state.currentGame.jarFile,
-                state.lastLoader, // loader with added properties, for name..
+                state.lastLoader, // loader with final уникальным appId
                 jsettings,
                 jappProps,
                 jsysProps
@@ -913,42 +523,12 @@ function readUI(targetGameObj) {
     }
 }
 
-function openEditGame(gameObj) {
-    if (!confirmDiscard()) {
-        return;
-    }
-    state.currentGame = gameObj;
-    document.getElementById("add-edit-text").textContent = "✏️ Редактировать игру";
-
-    setupAddManageGame(gameObj, false);
-}
-
-function confirmDiscard() {
-    if (state.currentGame != null && (state.currentGame.jarFile || state.currentGame.appId)) {
-        if (!confirm("Отменить изменения?")) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 async function reloadUI() {
     state.currentGame = null;
 
     state.games = await loadGames();
     fillGamesList(state.games);
-    setupAddMode();
-}
-
-async function doUninstallGame(appId) {
-    await launcherUtil.uninstallApp(appId);
-    await reloadUI();
-}
-
-async function doWipeData(appId) {
-    await launcherUtil.wipeAppData(appId);
-    document.getElementById("wipe-data-btn").disabled = false;
+ 
 }
 
 main();
